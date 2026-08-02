@@ -8,7 +8,9 @@
 		<array>
 			<string>com.apple.springboard</string>
 			<string>com.apple.ChronoCore</string>
+			<string>com.apple.chrono.WidgetKit</string>
 			<string>com.apple.WidgetKit</string>
+			<string>com.sina.weibo</string>
 		</array>
 	</dict>
 </dict>
