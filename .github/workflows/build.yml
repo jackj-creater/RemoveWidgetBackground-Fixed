@@ -16,13 +16,14 @@ jobs:
         run: |
           brew install ldid dpkg
           
-          # 克隆 Theos 本体
+          # 1. 克隆 Theos 本体
           git clone https://github.com/theos/theos.git ~/theos
           
-          # 补全打包所需的 dm.pl 依赖脚本
-          git clone https://github.com/theos/dm.pl.git ~/theos/vendor/dm.pl
+          # 2. 自动拉取和安装 missing 的 vendor/include 和 vendor/lib 等依赖
+          export THEOS=~/theos
+          $THEOS/bin/update-theos
           
-          # 清理并下载 iOS SDK
+          # 3. 清理并下载 iOS SDK
           rm -rf ~/theos/sdks
           git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks
 
