@@ -1,9 +1,4 @@
 #import <UIKit/UIKit.h>
-#import <Foundation/Foundation.h>
-
-// 显式声明私有类，防止编译器报 Undeclared Error
-@interface CHUISWidgetHostViewController : UIViewController
-@end
 
 // 递归清除所有子视图中的硬编码背景色与毛玻璃遮罩
 static void cleanWidgetBackground(UIView *view) {
@@ -43,15 +38,23 @@ static void cleanWidgetBackground(UIView *view) {
 
 %end
 
-// 修复负一屏丢失底板后触发的系统暗色模式错乱
-%hook CHUISWidgetHostViewController
+// 动态 Hook 负一屏宿主，避免静态 Hook 导致的编译未定义错误
+%group FixDarkMode
+%hook UIViewController
 
 - (void)viewDidLoad {
     %orig;
-    
-    if ([self respondsToSelector:@selector(setOverrideUserInterfaceStyle:)]) {
-        self.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
+    if ([NSStringFromClass([self class]) isEqualToString:@"CHUISWidgetHostViewController"]) {
+        if ([self respondsToSelector:@selector(setOverrideUserInterfaceStyle:)]) {
+            self.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
+        }
     }
 }
 
 %end
+%end
+
+%ctor {
+    %init(FixDarkMode);
+    %init(_ungrouped);
+}
