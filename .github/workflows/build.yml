@@ -16,13 +16,13 @@ jobs:
         run: |
           brew install ldid
           git clone --recursive https://github.com/theos/theos.git ~/theos
-          # 先清理 Theos 自带的空 sdks 目录，避免致命冲突
           rm -rf ~/theos/sdks
           git clone --depth=1 https://github.com/hexedtext/SDKS.git ~/theos/sdks
 
       - name: Build Tweak
         run: |
           export THEOS=~/theos
+          export SDKPATH=$(ls -d ~/theos/sdks/iPhoneOS*.sdk | tail -n 1)
           $THEOS/bin/make package THEOS_PACKAGE_SCHEME=rootless GO_EASY_ON_ME=1
         
       - name: Upload Artifact
