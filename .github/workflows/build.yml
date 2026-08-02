@@ -7,19 +7,30 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Setup Theos
-        uses: theos/action-setup@v1
+      - name: Setup Theos & SDK
+        run: |
+          echo "Installing Dependencies..."
+          brew install ldid
+          
+          echo "Cloning Theos..."
+          git clone --recursive https://github.com/theos/theos.git ~/theos
+          
+          echo "Cloning iOS SDKs..."
+          git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks
+          
+          echo "THEOS=~/theos" >> $GITHUB_ENV
 
       - name: Build Tweak
-        run: make package FINALPACKAGE=1
+        run: |
+          $THEOS/bin/make package FINALPACKAGE=1
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: RemoveWidgetBackground-deb
           path: packages/*.deb
