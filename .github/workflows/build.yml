@@ -19,13 +19,15 @@ jobs:
           # 克隆 Theos 本体
           git clone https://github.com/theos/theos.git ~/theos
           
+          # 补全打包所需的 dm.pl 依赖脚本
+          git clone https://github.com/theos/dm.pl.git ~/theos/vendor/dm.pl
+          
           # 清理并下载 iOS SDK
           rm -rf ~/theos/sdks
           git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks
 
       - name: Build Tweak
         run: |
-          # 导入环境变量并直接调用系统自带的 make
           export THEOS=~/theos
           make package THEOS_PACKAGE_SCHEME=rootless GO_EASY_ON_ME=1
         
