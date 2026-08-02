@@ -1,0 +1,9 @@
+Package: com.owngoal.removewidgetbackground
+Name: RemoveWidgetBackground
+Depends: mobilesubstrate
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Remove widget background blur in iOS 17
+Maintainer: YourName
+Author: YourName
+Section: Tweaks
