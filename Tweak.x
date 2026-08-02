@@ -1,12 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-// 声明私有类继承关系，供 Clang 识别属性
-@interface CHUISWidgetHostViewController : UIViewController
-@property (nonatomic, assign) UIUserInterfaceStyle overrideUserInterfaceStyle;
-@end
-
-// 安全清除背景，增加防崩溃与类型安全判断
+// 安全递归清除背景
 static void safeCleanWidgetBackground(UIView *view) {
     if (!view || ![view isKindOfClass:[UIView class]]) return;
     
@@ -17,14 +12,14 @@ static void safeCleanWidgetBackground(UIView *view) {
         return;
     }
     
-    // 避免对系统底层私有 View 强行修改背景色
+    // 避免对系统底层私有 View 强行改背景色
     if (![className hasPrefix:@"_UI"]) {
         if (view.backgroundColor && ![view.backgroundColor isEqual:[UIColor clearColor]]) {
             view.backgroundColor = [UIColor clearColor];
         }
     }
     
-    // 安全递归（copy 子视图数组，防止遍历时数组被修改导致 Crash）
+    // 安全递归（复制数组防止遍历中崩溃）
     NSArray *subviews = [view.subviews copy];
     for (UIView *subview in subviews) {
         safeCleanWidgetBackground(subview);
@@ -39,7 +34,7 @@ static void safeCleanWidgetBackground(UIView *view) {
     UIView *selfView = (UIView *)self;
     if (!selfView) return;
     
-    // 使用 Runtime 安全获取 _materialView，防止 KVC Exception 导致 Safe Mode
+    // 使用 Runtime 方式获取 _materialView，彻底规避 KVC Exception 崩溃
     @try {
         Ivar ivar = class_getInstanceVariable([self class], "_materialView");
         if (ivar) {
@@ -49,7 +44,7 @@ static void safeCleanWidgetBackground(UIView *view) {
             }
         }
     } @catch (NSException *exception) {
-        // 捕获异常，防止 Safe Mode
+        // 捕获异常
     }
     
     // 清理微博等第三方 App 内部背景
@@ -58,14 +53,23 @@ static void safeCleanWidgetBackground(UIView *view) {
 
 %end
 
-// 修复负一屏暗色模式错乱
-%hook CHUISWidgetHostViewController
+// 动态判断 Hook 负一屏宿主，避免静态 @interface 导致的 Clang 崩溃
+%group FixDarkMode
+%hook UIViewController
 
 - (void)viewDidLoad {
     %orig;
-    if ([self respondsToSelector:@selector(setOverrideUserInterfaceStyle:)]) {
-        self.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
+    if ([NSStringFromClass([self class]) isEqualToString:@"CHUISWidgetHostViewController"]) {
+        if ([self respondsToSelector:@selector(setOverrideUserInterfaceStyle:)]) {
+            [self performSelector:@selector(setOverrideUserInterfaceStyle:) withObject:@(UIUserInterfaceStyleUnspecified)];
+        }
     }
 }
 
 %end
+%end
+
+%ctor {
+    %init(FixDarkMode);
+    %init(_ungrouped);
+}
