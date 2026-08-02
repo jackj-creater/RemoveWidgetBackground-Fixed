@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
 
-// 前置声明私有类，防止编译器直接报错
+// 显式声明私有类，防止编译器报 Undeclared Error
 @interface CHUISWidgetHostViewController : UIViewController
 @end
 
