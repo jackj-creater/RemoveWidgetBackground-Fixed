@@ -26,19 +26,22 @@ static void cleanWidgetBackground(UIView *view) {
 - (void)layoutSubviews {
     %orig;
     
+    // 强转 self 为 UIView，解决前置声明无法调用 Objective-C 方法的问题
+    UIView *selfView = (UIView *)self;
+    
     // 隐藏系统外壳底板
-    UIView *materialView = [self valueForKey:@"_materialView"];
+    UIView *materialView = [selfView valueForKey:@"_materialView"];
     if (materialView) {
         materialView.hidden = YES;
     }
     
     // 清除组件内部自绘背景
-    cleanWidgetBackground(self);
+    cleanWidgetBackground(selfView);
 }
 
 %end
 
-// 动态 Hook 负一屏宿主，避免静态 Hook 导致的编译未定义错误
+// 动态 Hook 负一屏宿主，修复丢失底板后的暗色模式错乱
 %group FixDarkMode
 %hook UIViewController
 
