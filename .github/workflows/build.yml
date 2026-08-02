@@ -1,0 +1,25 @@
+name: Build Deb Package
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Theos
+        uses: theos/action-setup@v1
+
+      - name: Build Tweak
+        run: make package FINALPACKAGE=1
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: RemoveWidgetBackground-deb
+          path: packages/*.deb
