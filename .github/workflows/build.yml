@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Environment
+      - name: Setup Theos & SDK
         run: |
           brew install ldid
           git clone --recursive https://github.com/theos/theos.git ~/theos
@@ -21,8 +21,10 @@ jobs:
       - name: Build Tweak
         run: |
           export THEOS=~/theos
-          $THEOS/bin/make package FINALPACKAGE=1
-
+          # 自动匹配并指定最新的 iOS SDK
+          export SDKPATH=$(ls -d ~/theos/sdks/iPhoneOS*.sdk | tail -n 1)
+          $THEOS/bin/make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+        
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
