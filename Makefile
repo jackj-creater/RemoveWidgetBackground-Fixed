@@ -7,6 +7,6 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = RemoveWidgetBackground
 
 RemoveWidgetBackground_FILES = Tweak.x
-RemoveWidgetBackground_CFLAGS = -fobjc-arc
+RemoveWidgetBackground_CFLAGS = -fobjc-arc -Wno-error -Wno-unused-variable
 
 include $(THEOS_MAKE_PATH)/tweak.mk
