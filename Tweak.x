@@ -1,23 +1,27 @@
 #import <UIKit/UIKit.h>
 
-// 递归清除所有子视图中的硬编码背景色与毛玻璃遮罩
-static void cleanWidgetBackground(UIView *view) {
-    if (!view) return;
+// 安全清除背景，增加防崩溃判断
+static void safeCleanWidgetBackground(UIView *view) {
+    if (!view || ![view isKindOfClass:[UIView class]]) return;
     
-    // 隐藏系统级与第三方毛玻璃层
-    if ([view isKindOfClass:NSClassFromString(@"_UIVisualEffectView")] || 
-        [view isKindOfClass:NSClassFromString(@"MTMaterialView")]) {
+    // 隐藏毛玻璃材质层（使用 safer class check）
+    NSString *className = NSStringFromClass([view class]);
+    if ([className containsString:@"VisualEffect"] || [className containsString:@"MTMaterialView"]) {
         view.hidden = YES;
-        view.alpha = 0.0;
+        return;
     }
     
-    // 清除微博等第三方 App 在 View 内部硬编码的背景色
-    if (view.backgroundColor && ![view.backgroundColor isEqual:[UIColor clearColor]]) {
-        view.backgroundColor = [UIColor clearColor];
+    // 避免对系统关键私有 View 强行改背景色
+    if (![className hasPrefix:@"_UI"]) {
+        if (view.backgroundColor && ![view.backgroundColor isEqual:[UIColor clearColor]]) {
+            view.backgroundColor = [UIColor clearColor];
+        }
     }
     
-    for (UIView *subview in view.subviews) {
-        cleanWidgetBackground(subview);
+    // 安全递归
+    NSArray *subviews = [view.subviews copy]; // 避免遍历过程中数组被修改导致崩溃
+    for (UIView *subview in subviews) {
+        safeCleanWidgetBackground(subview);
     }
 }
 
@@ -26,38 +30,36 @@ static void cleanWidgetBackground(UIView *view) {
 - (void)layoutSubviews {
     %orig;
     
-    // 强转 self 为 UIView，解决前置声明无法调用 Objective-C 方法的问题
     UIView *selfView = (UIView *)self;
+    if (!selfView) return;
     
-    // 隐藏系统外壳底板
-    UIView *materialView = [selfView valueForKey:@"_materialView"];
-    if (materialView) {
-        materialView.hidden = YES;
+    // 使用 safer 的方式读取 _materialView，防止 KVC 变量名变化抛出 Exception 崩溃
+    @try {
+        Ivar ivar = class_getInstanceVariable([self class], "_materialView");
+        if (ivar) {
+            UIView *materialView = object_getIvar(self, ivar);
+            if (materialView && [materialView isKindOfClass:[UIView class]]) {
+                materialView.hidden = YES;
+            }
+        }
+    } @catch (NSException *exception) {
+        // 捕获异常，防止 Safe Mode
     }
     
-    // 清除组件内部自绘背景
-    cleanWidgetBackground(selfView);
+    // 安全递归清理微博等第三方 App 内部背景
+    safeCleanWidgetBackground(selfView);
 }
 
 %end
 
-// 动态 Hook 负一屏宿主，修复丢失底板后的暗色模式错乱
-%group FixDarkMode
-%hook UIViewController
+// Hook 指定类而不是全局 UIViewController，避免与系统或其他插件冲突
+%hook CHUISWidgetHostViewController
 
 - (void)viewDidLoad {
     %orig;
-    if ([NSStringFromClass([self class]) isEqualToString:@"CHUISWidgetHostViewController"]) {
-        if ([self respondsToSelector:@selector(setOverrideUserInterfaceStyle:)]) {
-            self.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
-        }
+    if ([self respondsToSelector:@selector(setOverrideUserInterfaceStyle:)]) {
+        self.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
     }
 }
 
 %end
-%end
-
-%ctor {
-    %init(FixDarkMode);
-    %init(_ungrouped);
-}
