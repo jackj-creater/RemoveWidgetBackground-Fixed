@@ -6,7 +6,7 @@ static BOOL kIsEnabled = YES;
 static BOOL kIsEnabledForSystemWidgets = YES;
 static BOOL kIsEnabledForMaterialView = YES;
 
-static BOOL kForceDarkMode = YES;
+static BOOL kForceDarkMode = NO;
 
 static CGFloat kMaxWidgetWidth = 150;
 static CGFloat kMaxWidgetHeight = 150;
@@ -41,7 +41,9 @@ static void ReloadPrefs() {
     if (settings[@"ForceDarkMode"]) {
         kForceDarkMode = [settings[@"ForceDarkMode"] boolValue];
     } else {
-        kForceDarkMode = YES;
+        // WidgetRenderer may not be able to read the shared preference domain
+        // on every jailbreak setup. Never fall back to an unexpected dark mode.
+        kForceDarkMode = NO;
     }
 
     if (settings[@"MaxWidgetWidth"]) {
@@ -232,10 +234,7 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 %hook CHUISWidgetHostViewController
 
 - (unsigned long long)colorScheme {
-    if (kForceDarkMode) {
-        return 2;
-    }
-    return %orig;
+    return kForceDarkMode ? 2 : 1;
 }
 
 - (void)_updateBackgroundMaterialAndColor {
@@ -342,12 +341,10 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 - (UIWindow *)initWithWindowScene:(UIWindowScene *)scene {
     UIWindow *window = %orig;
     if (window) {
-        CHSWidget *widget = [scene respondsToSelector:@selector(widget)] ? [(id)scene widget] : nil;
-        HBLogDebug(@"initWithWindowScene: %@", widget.extensionBundleIdentifier);
         window.rwb_shouldHideBackground = @(RWBShouldHideBackgroundForScene(scene));
         window.overrideUserInterfaceStyle = kForceDarkMode
                                                 ? UIUserInterfaceStyleDark
-                                                : UIUserInterfaceStyleUnspecified;
+                                                : UIUserInterfaceStyleLight;
     }
     return window;
 }
@@ -357,10 +354,7 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 %hook CHUISWidgetScene
 
 - (unsigned long long)colorScheme {
-    if (kForceDarkMode) {
-        return 2;
-    }
-    return %orig;
+    return kForceDarkMode ? 2 : 1;
 }
 
 %end
@@ -368,10 +362,7 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 %hook CHSMutableScreenshotPresentationAttributes
 
 - (long long)colorScheme {
-    if (kForceDarkMode) {
-        return 2;
-    }
-    return %orig;
+    return kForceDarkMode ? 2 : 1;
 }
 
 %end
@@ -379,10 +370,7 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 %hook CHSScreenshotPresentationAttributes
 
 - (long long)colorScheme {
-    if (kForceDarkMode) {
-        return 2;
-    }
-    return %orig;
+    return kForceDarkMode ? 2 : 1;
 }
 
 %end
@@ -449,10 +437,7 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 %hook UISCurrentUserInterfaceStyleValue
 
 - (long long)userInterfaceStyle {
-    if (kForceDarkMode) {
-        return 2;
-    }
-    return %orig;
+    return kForceDarkMode ? 2 : 1;
 }
 
 %end

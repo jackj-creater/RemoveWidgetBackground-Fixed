@@ -2,9 +2,9 @@
 
 Remove the background of any app widgets on the home screen.
 
-## iOS 17 fix (v2.0.1)
+## iOS 17 fix (v2.0.2)
 
-- Respect the **Force Dark Mode** preference instead of forcing every widget window to dark mode.
+- Use an explicit light appearance when **Force Dark Mode** is off and a dark appearance when it is on.
 - Find nested material views after layout so widget backgrounds are also removed from Today View.
 - Detect WidgetKit scenes by capability, allowing newer iOS 17 scene subclasses to work.
 
