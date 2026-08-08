@@ -141,15 +141,40 @@ static void ReloadPrefs() {
 @property (nonatomic, copy) CHSWidget *widget;
 @end
 
+static BOOL RWBShouldHideBackgroundForWidget(CHSWidget *widget) {
+    return [widget isKindOfClass:%c(CHSWidget)] &&
+           widget.extensionBundleIdentifier &&
+           [kWidgetBundleIdentifiers containsObject:widget.extensionBundleIdentifier];
+}
+
 static BOOL RWBShouldHideBackgroundForScene(UIWindowScene *scene) {
     if (![scene respondsToSelector:@selector(widget)]) {
         return NO;
     }
 
     CHSWidget *widget = [(id)scene widget];
-    return [widget isKindOfClass:%c(CHSWidget)] &&
-           widget.extensionBundleIdentifier &&
-           [kWidgetBundleIdentifiers containsObject:widget.extensionBundleIdentifier];
+    return RWBShouldHideBackgroundForWidget(widget);
+}
+
+// On iOS 17 the scene can be attached to its window before the widget metadata
+// is available. Re-check it at render/layout time so the very first valid frame
+// is transparent instead of briefly using the renderer's opaque black surface.
+static BOOL RWBRefreshWindowTarget(UIWindow *window) {
+    if (!window) {
+        return NO;
+    }
+
+    BOOL shouldHide = window.rwb_shouldHideBackground.boolValue ||
+                      RWBShouldHideBackgroundForScene(window.windowScene);
+    window.rwb_shouldHideBackground = @(shouldHide);
+
+    if (shouldHide) {
+        window.backgroundColor = UIColor.clearColor;
+        window.opaque = NO;
+        window.layer.opaque = NO;
+    }
+
+    return shouldHide;
 }
 
 static void RWBHideMaterialViewsInHierarchy(UIView *view) {
@@ -177,6 +202,10 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
     }
 
     UIView *rootView = viewController.view;
+    rootView.backgroundColor = UIColor.clearColor;
+    rootView.opaque = NO;
+    rootView.layer.opaque = NO;
+
     UIView *firstChild = rootView.subviews.firstObject;
     if ([firstChild isKindOfClass:UIVisualEffectView.class]) {
         firstChild.alpha = 0;
@@ -219,9 +248,20 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 
 %hook SBHWidgetViewController
 
-- (void)viewWillAppear:(BOOL)arg1 {
+- (void)viewDidLoad {
     %orig;
     RWBUpdateWidgetChrome(self);
+}
+
+- (void)viewWillAppear:(BOOL)arg1 {
+    RWBUpdateWidgetChrome(self);
+    %orig;
+    RWBUpdateWidgetChrome(self);
+}
+
+- (void)viewWillLayoutSubviews {
+    RWBUpdateWidgetChrome(self);
+    %orig;
 }
 
 - (void)viewDidLayoutSubviews {
@@ -233,6 +273,43 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 
 %hook CHUISWidgetHostViewController
 
+- (void)setWidget:(CHSWidget *)widget {
+    %orig;
+
+    if (RWBShouldHideBackgroundForWidget(widget)) {
+        RWBUpdateWidgetChrome(self);
+
+        // Some iOS 17 hosts install their material view immediately after the
+        // widget setter returns. Clean once more on the next main-loop turn.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (RWBShouldHideBackgroundForWidget(self.widget)) {
+                RWBUpdateWidgetChrome(self);
+            }
+        });
+    }
+}
+
+- (void)viewDidLoad {
+    %orig;
+    RWBUpdateWidgetChrome(self);
+}
+
+- (void)viewWillAppear:(BOOL)arg1 {
+    RWBUpdateWidgetChrome(self);
+    %orig;
+    RWBUpdateWidgetChrome(self);
+}
+
+- (void)viewWillLayoutSubviews {
+    RWBUpdateWidgetChrome(self);
+    %orig;
+}
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    RWBUpdateWidgetChrome(self);
+}
+
 - (unsigned long long)colorScheme {
     return kForceDarkMode ? 2 : 1;
 }
@@ -243,6 +320,7 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
         widget.extensionBundleIdentifier &&
         [kWidgetBundleIdentifiers containsObject:widget.extensionBundleIdentifier])
     {
+        RWBUpdateWidgetChrome(self);
         return;
     }
     %orig;
@@ -304,9 +382,20 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 
 %hook SBHWidgetStackViewController
 
-- (void)viewWillAppear:(BOOL)arg1 {
+- (void)viewDidLoad {
     %orig;
     RWBUpdateWidgetChrome(self);
+}
+
+- (void)viewWillAppear:(BOOL)arg1 {
+    RWBUpdateWidgetChrome(self);
+    %orig;
+    RWBUpdateWidgetChrome(self);
+}
+
+- (void)viewWillLayoutSubviews {
+    RWBUpdateWidgetChrome(self);
+    %orig;
 }
 
 - (void)viewDidLayoutSubviews {
@@ -318,9 +407,20 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 
 %hook WGWidgetListItemViewController
 
-- (void)viewWillAppear:(BOOL)arg1 {
+- (void)viewDidLoad {
     %orig;
     RWBUpdateWidgetChrome(self);
+}
+
+- (void)viewWillAppear:(BOOL)arg1 {
+    RWBUpdateWidgetChrome(self);
+    %orig;
+    RWBUpdateWidgetChrome(self);
+}
+
+- (void)viewWillLayoutSubviews {
+    RWBUpdateWidgetChrome(self);
+    %orig;
 }
 
 - (void)viewDidLayoutSubviews {
@@ -342,6 +442,7 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
     UIWindow *window = %orig;
     if (window) {
         window.rwb_shouldHideBackground = @(RWBShouldHideBackgroundForScene(scene));
+        RWBRefreshWindowTarget(window);
         window.overrideUserInterfaceStyle = kForceDarkMode
                                                 ? UIUserInterfaceStyleDark
                                                 : UIUserInterfaceStyleLight;
@@ -378,10 +479,27 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 %hook UIView
 
 - (void)layoutSubviews {
+    UIWindow *window = self.window;
+    BOOL shouldHideBackground = RWBRefreshWindowTarget(window);
+
+    if (shouldHideBackground &&
+        ![NSStringFromClass([self class]) containsString:@"UIHostingView"])
+    {
+        self.backgroundColor = UIColor.clearColor;
+        self.opaque = NO;
+        self.layer.opaque = NO;
+    }
+
     %orig;
 
-    if (![NSStringFromClass([self class]) containsString:@"UIHostingView"]) {
-        [self setBackgroundColor:UIColor.clearColor];
+    // UIKit can restore a container background during layout, so enforce the
+    // transparent state on both sides of the first layout pass.
+    if (shouldHideBackground &&
+        ![NSStringFromClass([self class]) containsString:@"UIHostingView"])
+    {
+        self.backgroundColor = UIColor.clearColor;
+        self.opaque = NO;
+        self.layer.opaque = NO;
     }
 }
 
@@ -391,8 +509,9 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 
 - (void)display {
     UIView *view = (UIView *)self.delegate;
+    UIWindow *window = [view isKindOfClass:[UIView class]] ? view.window : nil;
 
-    if ([view isKindOfClass:[UIView class]] && view.window.rwb_shouldHideBackground.boolValue) {
+    if ([view isKindOfClass:[UIView class]] && RWBRefreshWindowTarget(window)) {
         [NSThread currentThread].threadDictionary[@"rwb_shouldHideBackground"] = @YES;
         if (@available(iOS 17, *)) {
             if (self.opaque)

@@ -2,8 +2,10 @@
 
 Remove the background of any app widgets on the home screen.
 
-## iOS 17 fix (v2.0.2)
+## iOS 17 fix (v2.0.3)
 
+- Make the WidgetRenderer window non-opaque as soon as widget metadata becomes available, preventing a temporary black first frame.
+- Remove a late-created SpringBoard material background both when the widget is attached and before its first layout.
 - Use an explicit light appearance when **Force Dark Mode** is off and a dark appearance when it is on.
 - Find nested material views after layout so widget backgrounds are also removed from Today View.
 - Detect WidgetKit scenes by capability, allowing newer iOS 17 scene subclasses to work.
