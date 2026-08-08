@@ -1,17 +1,10 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.plist">
-<plist version="1.0">
-<dict>
-	<key>Filter</key>
-	<dict>
-		<key>Bundles</key>
-		<array>
-			<string>com.apple.springboard</string>
-			<string>com.apple.ChronoCore</string>
-			<string>com.apple.chrono.WidgetKit</string>
-			<string>com.apple.WidgetKit</string>
-			<string>com.sina.weibo</string>
-		</array>
-	</dict>
-</dict>
-</plist>
+{
+    Filter = {
+        Bundles = (
+            "com.apple.chronod",
+            "com.apple.springboard",
+            "com.apple.chrono.WidgetRenderer-Default",
+            "com.apple.chrono.WidgetRenderer-CarPlay"
+        );
+    };
+}

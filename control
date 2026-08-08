@@ -1,9 +1,0 @@
-Package: com.owngoal.removewidgetbackground
-Name: RemoveWidgetBackground (iOS 17 Fixed)
-Depends: mobilesubstrate (>= 0.9.5000), preferenceloader
-Version: 1.0.1
-Architecture: iphoneos-arm64
-Description: Transparent widget background for iOS 17 and Weibo
-Maintainer: Developer
-Author: Developer
-Section: Tweaks
