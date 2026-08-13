@@ -2,8 +2,10 @@
 
 Remove the background of any app widgets on the home screen.
 
-## iOS 17 fix (v2.0.4)
+## iOS 17 fix (v2.0.5)
 
+- Allow Weather, Fitness, and other widgets to refresh their persisted snapshots instead of falling back to a stale opaque placeholder.
+- Keep the host background disabled while iOS switches between persisted, live-snapshot, and live-scene content during a refresh.
 - Prevent the iOS 17 widget host from recreating its opaque black material while SpringBoard restores widgets after unlock.
 - Make the WidgetRenderer window non-opaque as soon as widget metadata becomes available, preventing a temporary black first frame.
 - Remove a late-created SpringBoard material background both when the widget is attached and before its first layout.

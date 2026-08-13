@@ -223,6 +223,18 @@ static BOOL RWBShouldSuppressHostBackground(CHUISWidgetHostViewController *viewC
     return RWBShouldHideBackgroundForWidget(viewController.widget);
 }
 
+static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewController) {
+    if (!RWBShouldSuppressHostBackground(viewController)) {
+        return;
+    }
+
+    viewController.drawSystemBackgroundMaterialIfNecessary = NO;
+    if ([viewController respondsToSelector:@selector(_setBackgroundViewMode:)]) {
+        ((void (*)(id, SEL, int))objc_msgSend)(viewController, @selector(_setBackgroundViewMode:), 0);
+    }
+    RWBUpdateWidgetChrome(viewController);
+}
+
 %group RWBSpringBoard
 
 %hook CHUISAvocadoHostViewController
@@ -330,19 +342,13 @@ static BOOL RWBShouldSuppressHostBackground(CHUISWidgetHostViewController *viewC
     %orig;
 
     if (RWBShouldHideBackgroundForWidget(widget)) {
-        self.drawSystemBackgroundMaterialIfNecessary = NO;
-
-        if ([self respondsToSelector:@selector(_setBackgroundViewMode:)]) {
-            ((void (*)(id, SEL, int))objc_msgSend)(self, @selector(_setBackgroundViewMode:), 0);
-        }
-
-        RWBUpdateWidgetChrome(self);
+        RWBEnforceHostTransparency(self);
 
         // Some iOS 17 hosts install their material view immediately after the
         // widget setter returns. Clean once more on the next main-loop turn.
         dispatch_async(dispatch_get_main_queue(), ^{
             if (RWBShouldHideBackgroundForWidget(self.widget)) {
-                RWBUpdateWidgetChrome(self);
+                RWBEnforceHostTransparency(self);
             }
         });
     }
@@ -354,32 +360,15 @@ static BOOL RWBShouldSuppressHostBackground(CHUISWidgetHostViewController *viewC
 }
 
 - (void)viewWillAppear:(BOOL)arg1 {
-    if (RWBShouldSuppressHostBackground(self) &&
-        [self respondsToSelector:@selector(_setBackgroundViewMode:)])
-    {
-        ((void (*)(id, SEL, int))objc_msgSend)(self, @selector(_setBackgroundViewMode:), 0);
-    }
-
-    RWBUpdateWidgetChrome(self);
+    RWBEnforceHostTransparency(self);
     %orig;
-    RWBUpdateWidgetChrome(self);
+    RWBEnforceHostTransparency(self);
 }
 
 - (void)viewDidMoveToWindow:(UIWindow *)window shouldAppearOrDisappear:(BOOL)shouldAppearOrDisappear {
-    if (RWBShouldSuppressHostBackground(self) &&
-        [self respondsToSelector:@selector(_setBackgroundViewMode:)])
-    {
-        ((void (*)(id, SEL, int))objc_msgSend)(self, @selector(_setBackgroundViewMode:), 0);
-    }
-
+    RWBEnforceHostTransparency(self);
     %orig;
-
-    if (RWBShouldSuppressHostBackground(self) &&
-        [self respondsToSelector:@selector(_setBackgroundViewMode:)])
-    {
-        ((void (*)(id, SEL, int))objc_msgSend)(self, @selector(_setBackgroundViewMode:), 0);
-    }
-    RWBUpdateWidgetChrome(self);
+    RWBEnforceHostTransparency(self);
 }
 
 - (void)viewWillLayoutSubviews {
@@ -409,25 +398,39 @@ static BOOL RWBShouldSuppressHostBackground(CHUISWidgetHostViewController *viewC
 }
 
 - (void)_updatePersistedSnapshotContent {
-    CHSWidget *widget = self.widget;
-    if ([widget isKindOfClass:%c(CHSWidget)] &&
-        widget.extensionBundleIdentifier &&
-        [kWidgetBundleIdentifiers containsObject:widget.extensionBundleIdentifier])
-    {
-        return;
-    }
+    RWBEnforceHostTransparency(self);
     %orig;
+    RWBEnforceHostTransparency(self);
 }
 
 - (void)_updatePersistedSnapshotContentIfNecessary {
-    CHSWidget *widget = self.widget;
-    if ([widget isKindOfClass:%c(CHSWidget)] &&
-        widget.extensionBundleIdentifier &&
-        [kWidgetBundleIdentifiers containsObject:widget.extensionBundleIdentifier])
-    {
-        return;
-    }
+    RWBEnforceHostTransparency(self);
     %orig;
+    RWBEnforceHostTransparency(self);
+}
+
+- (void)_ensureAndEvaluateSnapshotView {
+    RWBEnforceHostTransparency(self);
+    %orig;
+    RWBEnforceHostTransparency(self);
+}
+
+- (void)_applyLiveSnapshotContentsFromSnapshot:(id)snapshot {
+    RWBEnforceHostTransparency(self);
+    %orig(snapshot);
+    RWBEnforceHostTransparency(self);
+}
+
+- (void)sceneContentStateDidChange:(id)scene {
+    RWBEnforceHostTransparency(self);
+    %orig(scene);
+    RWBEnforceHostTransparency(self);
+}
+
+- (void)sceneLayerManagerDidUpdateLayers:(id)layerManager {
+    RWBEnforceHostTransparency(self);
+    %orig(layerManager);
+    RWBEnforceHostTransparency(self);
 }
 
 /* iOS 16.0 to 16.2 */
