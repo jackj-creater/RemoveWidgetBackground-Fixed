@@ -2,8 +2,12 @@
 
 Remove the background of any app widgets on the home screen.
 
-## iOS 17 fix (v2.0.3)
+## iOS 17 fix (v2.0.7)
 
+- Remove the experimental `SBHWidgetContainerView` hook introduced in v2.0.6 because private SpringBoard layouts differ across iOS 17 builds and can trigger safe mode.
+- Allow Weather, Fitness, and other widgets to refresh their persisted snapshots instead of falling back to a stale opaque placeholder.
+- Keep the host background disabled while iOS switches between persisted, live-snapshot, and live-scene content during a refresh.
+- Prevent the iOS 17 widget host from recreating its opaque black material while SpringBoard restores widgets after unlock.
 - Make the WidgetRenderer window non-opaque as soon as widget metadata becomes available, preventing a temporary black first frame.
 - Remove a late-created SpringBoard material background both when the widget is attached and before its first layout.
 - Use an explicit light appearance when **Force Dark Mode** is off and a dark appearance when it is on.

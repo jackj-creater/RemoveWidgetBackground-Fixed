@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import <objc/message.h>
 
 #import <HBLog.h>
 
@@ -122,6 +123,8 @@ static void ReloadPrefs() {
 
 @interface CHUISWidgetHostViewController : UIViewController
 @property (nonatomic, copy) CHSWidget *widget;
+@property (nonatomic) BOOL drawSystemBackgroundMaterialIfNecessary;
+- (void)_setBackgroundViewMode:(int)mode;
 @end
 
 @interface SBHWidgetStackViewController : UIViewController
@@ -216,6 +219,22 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
     RWBHideMaterialViewsInHierarchy(rootView);
 }
 
+static BOOL RWBShouldSuppressHostBackground(CHUISWidgetHostViewController *viewController) {
+    return RWBShouldHideBackgroundForWidget(viewController.widget);
+}
+
+static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewController) {
+    if (!RWBShouldSuppressHostBackground(viewController)) {
+        return;
+    }
+
+    viewController.drawSystemBackgroundMaterialIfNecessary = NO;
+    if ([viewController respondsToSelector:@selector(_setBackgroundViewMode:)]) {
+        ((void (*)(id, SEL, int))objc_msgSend)(viewController, @selector(_setBackgroundViewMode:), 0);
+    }
+    RWBUpdateWidgetChrome(viewController);
+}
+
 %group RWBSpringBoard
 
 %hook CHUISAvocadoHostViewController
@@ -273,17 +292,63 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 
 %hook CHUISWidgetHostViewController
 
+// iOS 17 calls this again when SpringBoard restores widgets after unlocking.
+// Mode 1 creates an opaque color view (black in dark appearance), while mode 0
+// hides it. Intercept the mode change before the black frame can be committed.
+- (void)_setBackgroundViewMode:(int)mode {
+    if (RWBShouldSuppressHostBackground(self)) {
+        %orig(0);
+        RWBUpdateWidgetChrome(self);
+        return;
+    }
+
+    %orig(mode);
+}
+
+- (int)_expectedBackgroundViewMode {
+    if (RWBShouldSuppressHostBackground(self)) {
+        return 0;
+    }
+
+    return %orig;
+}
+
+- (BOOL)drawSystemBackgroundMaterialIfNecessary {
+    if (RWBShouldSuppressHostBackground(self)) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (void)setDrawSystemBackgroundMaterialIfNecessary:(BOOL)shouldDraw {
+    if (RWBShouldSuppressHostBackground(self)) {
+        %orig(NO);
+        return;
+    }
+
+    %orig(shouldDraw);
+}
+
+- (BOOL)usesSystemBackgroundMaterial {
+    if (RWBShouldSuppressHostBackground(self)) {
+        return NO;
+    }
+
+    return %orig;
+}
+
 - (void)setWidget:(CHSWidget *)widget {
     %orig;
 
     if (RWBShouldHideBackgroundForWidget(widget)) {
-        RWBUpdateWidgetChrome(self);
+        RWBEnforceHostTransparency(self);
 
         // Some iOS 17 hosts install their material view immediately after the
         // widget setter returns. Clean once more on the next main-loop turn.
         dispatch_async(dispatch_get_main_queue(), ^{
             if (RWBShouldHideBackgroundForWidget(self.widget)) {
-                RWBUpdateWidgetChrome(self);
+                RWBEnforceHostTransparency(self);
             }
         });
     }
@@ -295,9 +360,15 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 }
 
 - (void)viewWillAppear:(BOOL)arg1 {
-    RWBUpdateWidgetChrome(self);
+    RWBEnforceHostTransparency(self);
     %orig;
-    RWBUpdateWidgetChrome(self);
+    RWBEnforceHostTransparency(self);
+}
+
+- (void)viewDidMoveToWindow:(UIWindow *)window shouldAppearOrDisappear:(BOOL)shouldAppearOrDisappear {
+    RWBEnforceHostTransparency(self);
+    %orig;
+    RWBEnforceHostTransparency(self);
 }
 
 - (void)viewWillLayoutSubviews {
@@ -327,25 +398,39 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 }
 
 - (void)_updatePersistedSnapshotContent {
-    CHSWidget *widget = self.widget;
-    if ([widget isKindOfClass:%c(CHSWidget)] &&
-        widget.extensionBundleIdentifier &&
-        [kWidgetBundleIdentifiers containsObject:widget.extensionBundleIdentifier])
-    {
-        return;
-    }
+    RWBEnforceHostTransparency(self);
     %orig;
+    RWBEnforceHostTransparency(self);
 }
 
 - (void)_updatePersistedSnapshotContentIfNecessary {
-    CHSWidget *widget = self.widget;
-    if ([widget isKindOfClass:%c(CHSWidget)] &&
-        widget.extensionBundleIdentifier &&
-        [kWidgetBundleIdentifiers containsObject:widget.extensionBundleIdentifier])
-    {
-        return;
-    }
+    RWBEnforceHostTransparency(self);
     %orig;
+    RWBEnforceHostTransparency(self);
+}
+
+- (void)_ensureAndEvaluateSnapshotView {
+    RWBEnforceHostTransparency(self);
+    %orig;
+    RWBEnforceHostTransparency(self);
+}
+
+- (void)_applyLiveSnapshotContentsFromSnapshot:(id)snapshot {
+    RWBEnforceHostTransparency(self);
+    %orig(snapshot);
+    RWBEnforceHostTransparency(self);
+}
+
+- (void)sceneContentStateDidChange:(id)scene {
+    RWBEnforceHostTransparency(self);
+    %orig(scene);
+    RWBEnforceHostTransparency(self);
+}
+
+- (void)sceneLayerManagerDidUpdateLayers:(id)layerManager {
+    RWBEnforceHostTransparency(self);
+    %orig(layerManager);
+    RWBEnforceHostTransparency(self);
 }
 
 /* iOS 16.0 to 16.2 */
