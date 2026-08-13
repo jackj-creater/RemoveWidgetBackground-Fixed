@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import <objc/message.h>
 
 #import <HBLog.h>
 
@@ -122,6 +123,8 @@ static void ReloadPrefs() {
 
 @interface CHUISWidgetHostViewController : UIViewController
 @property (nonatomic, copy) CHSWidget *widget;
+@property (nonatomic) BOOL drawSystemBackgroundMaterialIfNecessary;
+- (void)_setBackgroundViewMode:(int)mode;
 @end
 
 @interface SBHWidgetStackViewController : UIViewController
@@ -216,6 +219,10 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
     RWBHideMaterialViewsInHierarchy(rootView);
 }
 
+static BOOL RWBShouldSuppressHostBackground(CHUISWidgetHostViewController *viewController) {
+    return RWBShouldHideBackgroundForWidget(viewController.widget);
+}
+
 %group RWBSpringBoard
 
 %hook CHUISAvocadoHostViewController
@@ -273,10 +280,62 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 
 %hook CHUISWidgetHostViewController
 
+// iOS 17 calls this again when SpringBoard restores widgets after unlocking.
+// Mode 1 creates an opaque color view (black in dark appearance), while mode 0
+// hides it. Intercept the mode change before the black frame can be committed.
+- (void)_setBackgroundViewMode:(int)mode {
+    if (RWBShouldSuppressHostBackground(self)) {
+        %orig(0);
+        RWBUpdateWidgetChrome(self);
+        return;
+    }
+
+    %orig(mode);
+}
+
+- (int)_expectedBackgroundViewMode {
+    if (RWBShouldSuppressHostBackground(self)) {
+        return 0;
+    }
+
+    return %orig;
+}
+
+- (BOOL)drawSystemBackgroundMaterialIfNecessary {
+    if (RWBShouldSuppressHostBackground(self)) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (void)setDrawSystemBackgroundMaterialIfNecessary:(BOOL)shouldDraw {
+    if (RWBShouldSuppressHostBackground(self)) {
+        %orig(NO);
+        return;
+    }
+
+    %orig(shouldDraw);
+}
+
+- (BOOL)usesSystemBackgroundMaterial {
+    if (RWBShouldSuppressHostBackground(self)) {
+        return NO;
+    }
+
+    return %orig;
+}
+
 - (void)setWidget:(CHSWidget *)widget {
     %orig;
 
     if (RWBShouldHideBackgroundForWidget(widget)) {
+        self.drawSystemBackgroundMaterialIfNecessary = NO;
+
+        if ([self respondsToSelector:@selector(_setBackgroundViewMode:)]) {
+            ((void (*)(id, SEL, int))objc_msgSend)(self, @selector(_setBackgroundViewMode:), 0);
+        }
+
         RWBUpdateWidgetChrome(self);
 
         // Some iOS 17 hosts install their material view immediately after the
@@ -295,8 +354,31 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 }
 
 - (void)viewWillAppear:(BOOL)arg1 {
+    if (RWBShouldSuppressHostBackground(self) &&
+        [self respondsToSelector:@selector(_setBackgroundViewMode:)])
+    {
+        ((void (*)(id, SEL, int))objc_msgSend)(self, @selector(_setBackgroundViewMode:), 0);
+    }
+
     RWBUpdateWidgetChrome(self);
     %orig;
+    RWBUpdateWidgetChrome(self);
+}
+
+- (void)viewDidMoveToWindow:(UIWindow *)window shouldAppearOrDisappear:(BOOL)shouldAppearOrDisappear {
+    if (RWBShouldSuppressHostBackground(self) &&
+        [self respondsToSelector:@selector(_setBackgroundViewMode:)])
+    {
+        ((void (*)(id, SEL, int))objc_msgSend)(self, @selector(_setBackgroundViewMode:), 0);
+    }
+
+    %orig;
+
+    if (RWBShouldSuppressHostBackground(self) &&
+        [self respondsToSelector:@selector(_setBackgroundViewMode:)])
+    {
+        ((void (*)(id, SEL, int))objc_msgSend)(self, @selector(_setBackgroundViewMode:), 0);
+    }
     RWBUpdateWidgetChrome(self);
 }
 
