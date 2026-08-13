@@ -2,8 +2,9 @@
 
 Remove the background of any app widgets on the home screen.
 
-## iOS 17 fix (v2.0.5)
+## iOS 17 fix (v2.0.6)
 
+- Clear `SBHWidgetContainerView.backgroundView` before SpringBoard inserts a refreshed Weather or Fitness widget snapshot, eliminating the short opaque rounded rectangle seen in recordings.
 - Allow Weather, Fitness, and other widgets to refresh their persisted snapshots instead of falling back to a stale opaque placeholder.
 - Keep the host background disabled while iOS switches between persisted, live-snapshot, and live-scene content during a refresh.
 - Prevent the iOS 17 widget host from recreating its opaque black material while SpringBoard restores widgets after unlock.

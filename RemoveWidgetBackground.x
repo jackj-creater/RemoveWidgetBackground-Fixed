@@ -121,6 +121,10 @@ static void ReloadPrefs() {
 @interface SBHWidgetViewController : UIViewController
 @end
 
+@interface SBHWidgetContainerView : UIView
+@property (nonatomic, strong) UIView *backgroundView;
+@end
+
 @interface CHUISWidgetHostViewController : UIViewController
 @property (nonatomic, copy) CHSWidget *widget;
 @property (nonatomic) BOOL drawSystemBackgroundMaterialIfNecessary;
@@ -235,7 +239,44 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     RWBUpdateWidgetChrome(viewController);
 }
 
+static void RWBHideContainerBackground(UIView *backgroundView) {
+    if (!kIsEnabledForMaterialView || !backgroundView) {
+        return;
+    }
+
+    // SBHWidgetContainerView.backgroundView is separate from widgetView. iOS
+    // replaces it briefly while swapping refreshed widget snapshots, so make
+    // the new background non-rendering before it can reach the display server.
+    backgroundView.backgroundColor = UIColor.clearColor;
+    backgroundView.opaque = NO;
+    backgroundView.layer.opaque = NO;
+    backgroundView.alpha = 0;
+    backgroundView.hidden = YES;
+}
+
 %group RWBSpringBoard
+
+%hook SBHWidgetContainerView
+
+- (void)setBackgroundView:(UIView *)backgroundView {
+    RWBHideContainerBackground(backgroundView);
+    %orig(backgroundView);
+    RWBHideContainerBackground(self.backgroundView);
+}
+
+- (void)layoutSubviews {
+    RWBHideContainerBackground(self.backgroundView);
+    %orig;
+    RWBHideContainerBackground(self.backgroundView);
+}
+
+- (void)didMoveToWindow {
+    RWBHideContainerBackground(self.backgroundView);
+    %orig;
+    RWBHideContainerBackground(self.backgroundView);
+}
+
+%end
 
 %hook CHUISAvocadoHostViewController
 
