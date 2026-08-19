@@ -124,6 +124,7 @@ static void ReloadPrefs() {
 @interface CHUISWidgetHostViewController : UIViewController
 @property (nonatomic, copy) CHSWidget *widget;
 @property (nonatomic) BOOL drawSystemBackgroundMaterialIfNecessary;
+@property (nonatomic, strong) NSNumber *rwb_shouldSuppressBackground;
 - (void)_setBackgroundViewMode:(int)mode;
 @end
 
@@ -220,6 +221,11 @@ static void RWBUpdateWidgetChrome(UIViewController *viewController) {
 }
 
 static BOOL RWBShouldSuppressHostBackground(CHUISWidgetHostViewController *viewController) {
+    NSNumber *decision = viewController.rwb_shouldSuppressBackground;
+    if (decision) {
+        return decision.boolValue;
+    }
+
     return RWBShouldHideBackgroundForWidget(viewController.widget);
 }
 
@@ -292,6 +298,8 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 
 %hook CHUISWidgetHostViewController
 
+%property (nonatomic, strong) NSNumber *rwb_shouldSuppressBackground;
+
 // iOS 17 calls this again when SpringBoard restores widgets after unlocking.
 // Mode 1 creates an opaque color view (black in dark appearance), while mode 0
 // hides it. Intercept the mode change before the black frame can be committed.
@@ -339,15 +347,23 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 }
 
 - (void)setWidget:(CHSWidget *)widget {
+    // setWidget: can synchronously choose and install a host background. Mark
+    // the new widget before entering Apple's implementation so nested calls to
+    // _setBackgroundViewMode: cannot commit one opaque frame first. A nil
+    // widget is transitional during refresh, so preserve the previous target.
+    if (widget) {
+        self.rwb_shouldSuppressBackground = @(RWBShouldHideBackgroundForWidget(widget));
+    }
+
     %orig;
 
-    if (RWBShouldHideBackgroundForWidget(widget)) {
+    if (RWBShouldSuppressHostBackground(self)) {
         RWBEnforceHostTransparency(self);
 
         // Some iOS 17 hosts install their material view immediately after the
         // widget setter returns. Clean once more on the next main-loop turn.
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (RWBShouldHideBackgroundForWidget(self.widget)) {
+            if (RWBShouldSuppressHostBackground(self)) {
                 RWBEnforceHostTransparency(self);
             }
         });
@@ -509,9 +525,19 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 %property (nonatomic, strong) NSNumber *rwb_shouldHideBackground;
 
 - (UIWindow *)initWithWindowScene:(UIWindowScene *)scene {
+    // The renderer may draw its first snapshot from inside UIWindow's original
+    // initializer. Seed the target flag before %orig, matching the upstream
+    // timing, then refresh it on the initialized window for scene subclasses
+    // whose widget metadata arrives later.
+    BOOL shouldHideBackground = RWBShouldHideBackgroundForScene(scene);
+    if (shouldHideBackground) {
+        self.rwb_shouldHideBackground = @YES;
+    }
+
     UIWindow *window = %orig;
     if (window) {
-        window.rwb_shouldHideBackground = @(RWBShouldHideBackgroundForScene(scene));
+        window.rwb_shouldHideBackground = @(shouldHideBackground ||
+                                             window.rwb_shouldHideBackground.boolValue);
         RWBRefreshWindowTarget(window);
         window.overrideUserInterfaceStyle = kForceDarkMode
                                                 ? UIUserInterfaceStyleDark

@@ -2,8 +2,10 @@
 
 Remove the background of any app widgets on the home screen.
 
-## iOS 17 fix (v2.0.8)
+## iOS 17 fix (v2.0.9)
 
+- Mark selected widgets before `UIWindow` and `CHUISWidgetHostViewController` run their original initialization paths, closing the first-frame race during automatic refreshes.
+- Preserve the host transparency decision while iOS temporarily clears widget metadata during a scene transition.
 - Keep SpringBoard from briefly replacing a transparent live widget with an opaque persisted snapshot during automatic Weather and Fitness refreshes.
 - Reduce the experimental snapshot hook surface and retain the upstream iOS 17 drawing-command filter.
 - Remove the experimental `SBHWidgetContainerView` hook introduced in v2.0.6 because private SpringBoard layouts differ across iOS 17 builds and can trigger safe mode.
