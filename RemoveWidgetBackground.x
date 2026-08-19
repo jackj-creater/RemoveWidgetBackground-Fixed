@@ -398,39 +398,24 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 }
 
 - (void)_updatePersistedSnapshotContent {
-    RWBEnforceHostTransparency(self);
+    // Keep the live transparent scene visible. SpringBoard's persisted image
+    // is rendered independently and can still contain the system background;
+    // swapping it in produces the short opaque frame seen during refreshes.
+    if (RWBShouldSuppressHostBackground(self)) {
+        RWBEnforceHostTransparency(self);
+        return;
+    }
+
     %orig;
-    RWBEnforceHostTransparency(self);
 }
 
 - (void)_updatePersistedSnapshotContentIfNecessary {
-    RWBEnforceHostTransparency(self);
+    if (RWBShouldSuppressHostBackground(self)) {
+        RWBEnforceHostTransparency(self);
+        return;
+    }
+
     %orig;
-    RWBEnforceHostTransparency(self);
-}
-
-- (void)_ensureAndEvaluateSnapshotView {
-    RWBEnforceHostTransparency(self);
-    %orig;
-    RWBEnforceHostTransparency(self);
-}
-
-- (void)_applyLiveSnapshotContentsFromSnapshot:(id)snapshot {
-    RWBEnforceHostTransparency(self);
-    %orig(snapshot);
-    RWBEnforceHostTransparency(self);
-}
-
-- (void)sceneContentStateDidChange:(id)scene {
-    RWBEnforceHostTransparency(self);
-    %orig(scene);
-    RWBEnforceHostTransparency(self);
-}
-
-- (void)sceneLayerManagerDidUpdateLayers:(id)layerManager {
-    RWBEnforceHostTransparency(self);
-    %orig(layerManager);
-    RWBEnforceHostTransparency(self);
 }
 
 /* iOS 16.0 to 16.2 */
