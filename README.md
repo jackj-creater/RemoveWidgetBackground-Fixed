@@ -2,8 +2,9 @@
 
 Remove the background of any app widgets on the home screen.
 
-## iOS 17 fix (v2.0.9)
+## iOS 17 fix (v2.1.2)
 
+- Include the upstream v2.1.1 sandbox preference fix so each iOS 17 WidgetRenderer receives the selected-widget, appearance, and drawing-threshold settings before rendering.
 - Mark selected widgets before `UIWindow` and `CHUISWidgetHostViewController` run their original initialization paths, closing the first-frame race during automatic refreshes.
 - Preserve the host transparency decision while iOS temporarily clears widget metadata during a scene transition.
 - Keep SpringBoard from briefly replacing a transparent live widget with an opaque persisted snapshot during automatic Weather and Fitness refreshes.
