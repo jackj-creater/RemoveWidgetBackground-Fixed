@@ -2,12 +2,29 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Diagnostic build: 2.1.3~diagnostic1
+## Candidate build: 2.1.3~test2
+
+The diagnostic1 device capture on iOS 17.1.1 overlapped a user-confirmed 1–2 second
+black flash. Recorded host backgrounds were clear, effect views hidden, and eight
+persisted snapshot updates suppressed. This narrows investigation but does not
+identify the black pixels: the report samples every half second and cannot inspect
+remote rendered contents or every transition layer.
+
+This candidate makes one rendering change: isolate the per-thread removal flag
+and rectangle counters for each nested RBLayer display, restoring the parent state
+in `@finally`. Previously a child could inherit its parent's counter, then erase the
+parent's removal state on return; non-target children could inherit removal too.
+Tests exercise target/non-target nesting, exceptions, and consecutive displays.
+Actual nesting during the reported flash has NOT been captured. This is a code
+correctness fix and a device-test candidate, not a confirmed visual fix. Rectangle
+selection order, snapshot policy, and SpringBoard background hooks are unchanged.
+
+The existing opt-in diagnostics remain available:
 
 Version 2.1.2 still shows a black widget background for 1–2 seconds when returning
 from an app. The cause has not been verified on the affected device. This build
-preserves its rendering behavior and adds an explicitly started, 30-second
-SpringBoard capture. Compilation is not validation of the visual fix.
+includes an explicitly started, 30-second SpringBoard capture. Compilation and
+state-isolation tests are not validation of the visual fix.
 
 1. Install the diagnostic package and respring using the preference pane.
 2. In Settings → Remove Widget Background, tap “记录组件黑底（30 秒）”, then “开始”.

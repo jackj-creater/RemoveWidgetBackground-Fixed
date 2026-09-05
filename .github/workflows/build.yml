@@ -49,6 +49,11 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Test drawing state isolation
+      run: |
+        xcrun clang -fobjc-arc -Wall -Wextra -Werror -framework Foundation tests/drawing-state.m -o /tmp/rwb-drawing-state-tests
+        /tmp/rwb-drawing-state-tests
+
     - name: Build (arm)
       run: |
         source devkit/env.sh

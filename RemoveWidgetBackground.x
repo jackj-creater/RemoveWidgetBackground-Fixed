@@ -3,6 +3,7 @@
 
 #import <HBLog.h>
 #import "RWBDiagnostics.h"
+#import "RWBDrawingState.h"
 
 static BOOL kIsEnabled = YES;
 static BOOL kIsEnabledForSystemWidgets = YES;
@@ -629,20 +630,21 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     UIView *view = (UIView *)self.delegate;
     UIWindow *window = [view isKindOfClass:[UIView class]] ? view.window : nil;
 
-    if ([view isKindOfClass:[UIView class]] && RWBRefreshWindowTarget(window)) {
-        [NSThread currentThread].threadDictionary[@"rwb_shouldHideBackground"] = @YES;
-        if (@available(iOS 17, *)) {
-            if (self.opaque)
-                self.opaque = NO;
-        }
+    BOOL shouldHide = [view isKindOfClass:[UIView class]] && RWBRefreshWindowTarget(window);
+    NSMutableDictionary *threadDictionary = [NSThread currentThread].threadDictionary;
+    // Also isolate a non-target child from an active target parent. Otherwise
+    // its shapes inherit the parent's removal flag and advance its counter.
+    if (shouldHide || threadDictionary[@"rwb_shouldHideBackground"]) {
+        NSDictionary *saved = RWBPushDrawingState(threadDictionary, shouldHide);
+        @try {
+            if (@available(iOS 17, *)) {
+                if (shouldHide && self.opaque)
+                    self.opaque = NO;
+            }
 
-        %orig;
-
-        [NSThread currentThread].threadDictionary[@"rwb_shouldHideBackground"] = nil;
-        if (@available(iOS 17, *)) {
-            [NSThread currentThread].threadDictionary[@"rwb_didSkipFirstN"] = nil;
-        } else {
-            [NSThread currentThread].threadDictionary[@"rwb_didSkipFirst"] = nil;
+            %orig;
+        } @finally {
+            RWBPopDrawingState(threadDictionary, saved);
         }
 
         return;
