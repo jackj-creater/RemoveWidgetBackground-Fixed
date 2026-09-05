@@ -155,8 +155,50 @@ void RWBGBatchKillAll(NSArray<NSString *> *processNames, BOOL softly) {
     }
 }
 
+- (void)recordWidgetDiagnostic {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"记录组件黑底（30 秒）"
+        message:@"开始后回到桌面，点击天气或健身组件打开 App，再返回桌面。30 秒后回来点“导出诊断”。只记录视图状态，不记录组件文字或截图。"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"开始" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+            CFSTR("com.82flex.removewidgetbg/diagnostic-begin"), NULL, NULL, YES);
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)exportWidgetDiagnostic {
+    NSString *path = @"/var/mobile/Library/Logs/RemoveWidgetBackground-diagnostic.txt";
+    NSError *error = nil;
+    NSString *report = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:&error];
+    BOOL complete = [report containsString:@"Capture complete"];
+    if (!report || !complete) {
+        NSString *message = report ? @"还在记录，请等待 30 秒后再导出。若一直如此，请确认插件已启用，并使用本页“注销以应用更改”后重新记录。"
+            : @"未找到诊断文件。请确认插件已启用，安装后注销桌面一次，再点“记录组件黑底”。";
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"诊断尚未完成"
+            message:message preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    NSString *exportPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"RemoveWidgetBackground-diagnostic.txt"];
+    if (![report writeToFile:exportPath atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"导出失败"
+            message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    UIActivityViewController *sheet = [[UIActivityViewController alloc]
+        initWithActivityItems:@[[NSURL fileURLWithPath:exportPath]] applicationActivities:nil];
+    sheet.popoverPresentationController.sourceView = self.view;
+    sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds),
+        CGRectGetMidY(self.view.bounds), 1, 1);
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section == 5) {
+    {
         PSSpecifier *specifier = [self specifierAtIndexPath:indexPath];
         NSString *key = [specifier propertyForKey:@"cell"];
         if ([key isEqualToString:@"PSButtonCell"]) {

@@ -2,21 +2,32 @@
 
 Remove the background of any app widgets on the home screen.
 
-## iOS 17 fix (v2.1.2)
+## Diagnostic build: 2.1.3~diagnostic1
 
-- Include the upstream v2.1.1 sandbox preference fix so each iOS 17 WidgetRenderer receives the selected-widget, appearance, and drawing-threshold settings before rendering.
-- Mark selected widgets before `UIWindow` and `CHUISWidgetHostViewController` run their original initialization paths, closing the first-frame race during automatic refreshes.
-- Preserve the host transparency decision while iOS temporarily clears widget metadata during a scene transition.
-- Keep SpringBoard from briefly replacing a transparent live widget with an opaque persisted snapshot during automatic Weather and Fitness refreshes.
-- Reduce the experimental snapshot hook surface and retain the upstream iOS 17 drawing-command filter.
-- Remove the experimental `SBHWidgetContainerView` hook introduced in v2.0.6 because private SpringBoard layouts differ across iOS 17 builds and can trigger safe mode.
-- Keep the host background disabled while iOS updates live widget content or restores widgets after unlock.
-- Prevent the iOS 17 widget host from recreating its opaque black material while SpringBoard restores widgets after unlock.
-- Make the WidgetRenderer window non-opaque as soon as widget metadata becomes available, preventing a temporary black first frame.
-- Remove a late-created SpringBoard material background both when the widget is attached and before its first layout.
-- Use an explicit light appearance when **Force Dark Mode** is off and a dark appearance when it is on.
-- Find nested material views after layout so widget backgrounds are also removed from Today View.
-- Detect WidgetKit scenes by capability, allowing newer iOS 17 scene subclasses to work.
+Version 2.1.2 still shows a black widget background for 1–2 seconds when returning
+from an app. The cause has not been verified on the affected device. This build
+preserves its rendering behavior and adds an explicitly started, 30-second
+SpringBoard capture. Compilation is not validation of the visual fix.
+
+1. Install the diagnostic package and respring using the preference pane.
+2. In Settings → Remove Widget Background, tap “记录组件黑底（30 秒）”, then “开始”.
+3. Return home, tap Weather or Fitness to open its app, then return home again.
+4. After 30 seconds, reopen the preference pane and tap “导出诊断”.
+
+The report records host lifecycle events, snapshot suppression, background mode
+requests, and bounded public view/layer state for the host and nearby containers.
+It does not read widget text, screenshots, image pixels, or remote scene contents.
+There is no automatic upload. Sampling runs every half second only during the
+capture, stops at 30 seconds or the report-size limit, and logs changed states.
+The report is written to `/var/mobile/Library/Logs/RemoveWidgetBackground-diagnostic.txt`.
+Each capture replaces the previous report. Runtime capture/export on RootHide
+still needs device validation. An unchanged report cannot rule out a background
+embedded inside a remote rendered surface.
+
+The inherited implementation includes upstream v2.1.1 preference loading,
+early target marking, persisted-snapshot suppression, material cleanup, and
+explicit light/dark appearance. These are attempted mitigations, not confirmed
+solutions to the remaining flash. The experimental container hook remains absent.
 
 App widgets are built with SwiftUI.
 Since it's not an easy job to recognize the background view, we managed to remove them by restricting the size of drawing commands.

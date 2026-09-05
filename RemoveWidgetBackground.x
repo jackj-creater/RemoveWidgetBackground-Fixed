@@ -2,6 +2,7 @@
 #import <objc/message.h>
 
 #import <HBLog.h>
+#import "RWBDiagnostics.h"
 
 static BOOL kIsEnabled = YES;
 static BOOL kIsEnabledForSystemWidgets = YES;
@@ -311,6 +312,7 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 // Mode 1 creates an opaque color view (black in dark appearance), while mode 0
 // hides it. Intercept the mode change before the black frame can be committed.
 - (void)_setBackgroundViewMode:(int)mode {
+    if (RWBDiagnosticActive) RWBDiagnosticEvent(self, [NSString stringWithFormat:@"background-mode requested=%d suppress=%d", mode, RWBShouldSuppressHostBackground(self)]);
     if (RWBShouldSuppressHostBackground(self)) {
         %orig(0);
         RWBUpdateWidgetChrome(self);
@@ -354,6 +356,8 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 }
 
 - (void)setWidget:(CHSWidget *)widget {
+    RWBDiagnosticTrack(self);
+    if (RWBDiagnosticActive) RWBDiagnosticEvent(self, [NSString stringWithFormat:@"setWidget incoming=%@", widget.extensionBundleIdentifier ?: @"nil"]);
     // setWidget: can synchronously choose and install a host background. Mark
     // the new widget before entering Apple's implementation so nested calls to
     // _setBackgroundViewMode: cannot commit one opaque frame first. A nil
@@ -384,8 +388,16 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 
 - (void)viewWillAppear:(BOOL)arg1 {
     RWBEnforceHostTransparency(self);
+    RWBDiagnosticTrack(self);
+    RWBDiagnosticEvent(self, @"viewWillAppear before original");
     %orig;
+    RWBDiagnosticEvent(self, @"viewWillAppear after original");
     RWBEnforceHostTransparency(self);
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig;
+    RWBDiagnosticEvent(self, @"viewDidDisappear");
 }
 
 - (void)viewDidMoveToWindow:(UIWindow *)window shouldAppearOrDisappear:(BOOL)shouldAppearOrDisappear {
@@ -421,11 +433,13 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 }
 
 - (void)_updatePersistedSnapshotContent {
+    RWBDiagnosticEvent(self, @"persisted snapshot update entered");
     // Keep the live transparent scene visible. SpringBoard's persisted image
     // is rendered independently and can still contain the system background;
     // swapping it in produces the short opaque frame seen during refreshes.
     if (RWBShouldSuppressHostBackground(self)) {
         RWBEnforceHostTransparency(self);
+        RWBDiagnosticEvent(self, @"persisted snapshot update suppressed");
         return;
     }
 
@@ -433,6 +447,7 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 }
 
 - (void)_updatePersistedSnapshotContentIfNecessary {
+    RWBDiagnosticEvent(self, @"persisted snapshot conditional update entered");
     if (RWBShouldSuppressHostBackground(self)) {
         RWBEnforceHostTransparency(self);
         return;
@@ -737,6 +752,9 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 
     if ([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
         HBLogDebug(@"Initialized in SpringBoard");
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+            RWBDiagnosticBegin, CFSTR("com.82flex.removewidgetbg/diagnostic-begin"), NULL,
+            CFNotificationSuspensionBehaviorDeliverImmediately);
         %init(RWBSpringBoard);
     }
     else if ([bundleIdentifier isEqualToString:@"com.apple.chronod"] || gIsWidgetRenderer) {
