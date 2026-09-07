@@ -2,7 +2,19 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Candidate build: 2.1.3~test5
+## Candidate build: 2.1.3~test6
+
+Test5 removed the black background on the affected device, confirming the
+two-rectangle transition diagnosis, but the whole widget disappeared for 1–2
+seconds because neither full-size shape remained. Test6 keeps the transparent
+test5 renderer behavior and adds a SpringBoard transition bridge: each selected
+host caches its last stable transparent snapshot locally, shows that view when
+the renderer enters the repeated two-rectangle phase, and fades it out when the
+same renderer returns to a normal rectangle count. A three-second fallback always
+removes the overlay. The snapshot is held only in memory and is never added to the
+diagnostic export. Device validation is still required.
+
+## Previous candidate: 2.1.3~test5
 
 Diagnostic4 captured the affected iOS 17.1.1 return transition. Target recognition
 remained enabled and the render layer remained nonopaque. About 0.65 seconds after
