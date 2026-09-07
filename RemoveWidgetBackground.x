@@ -738,8 +738,9 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     }
 
     if (RWBShouldUseStableDisplayList(largeRectCount, hasStableList)) {
-        RBDisplayList *stableList = [RBDisplayList decodedObjectWithData:stableData
-                                                                delegate:nil error:nil];
+        Class displayListClass = NSClassFromString(@"RBDisplayList");
+        RBDisplayList *stableList = [displayListClass decodedObjectWithData:stableData
+                                                                    delegate:nil error:nil];
         if (diagnosticFrame) diagnosticFrame[@"decodedDisplayList"] = @(stableList != nil);
         if (!stableList) return;
         // Replaying the normal list also expands RBShape objects. Give that
