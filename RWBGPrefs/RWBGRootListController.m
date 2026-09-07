@@ -157,10 +157,21 @@ void RWBGBatchKillAll(NSArray<NSString *> *processNames, BOOL softly) {
 
 - (void)recordWidgetDiagnostic {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"记录组件黑底（30 秒）"
-        message:@"开始后回到桌面，点击天气或健身组件打开 App，再返回桌面。30 秒后回来点“导出诊断”。只记录视图状态，不记录组件文字或截图。"
+        message:@"开始后回到桌面，点击天气或健身组件打开 App，再返回桌面。30 秒后回来点“导出诊断”。会记录背景矩形的尺寸和处理结果，不记录组件文字、图片或截图。"
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [alert addAction:[UIAlertAction actionWithTitle:@"开始" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSFileManager *manager = NSFileManager.defaultManager;
+        for (NSString *directory in @[@"/var/mobile/Library/Logs", @"/var/mobile/Library/Preferences"]) {
+            for (NSString *name in [manager contentsOfDirectoryAtPath:directory error:nil]) {
+                if ([name hasPrefix:@"RemoveWidgetBackground-renderer-"] && [name hasSuffix:@".txt"])
+                    [manager removeItemAtPath:[directory stringByAppendingPathComponent:name] error:nil];
+            }
+        }
+        CFAbsoluteTime until = NSDate.date.timeIntervalSince1970 + 31.0;
+        CFPreferencesSetAppValue(CFSTR("DiagnosticUntil"), (__bridge CFNumberRef)@(until),
+                                 CFSTR("com.82flex.removewidgetbgprefs"));
+        CFPreferencesAppSynchronize(CFSTR("com.82flex.removewidgetbgprefs"));
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
             CFSTR("com.82flex.removewidgetbg/diagnostic-begin"), NULL, NULL, YES);
     }]];
@@ -181,8 +192,24 @@ void RWBGBatchKillAll(NSArray<NSString *> *processNames, BOOL softly) {
         [self presentViewController:alert animated:YES completion:nil];
         return;
     }
-    NSString *exportPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"RemoveWidgetBackground-diagnostic.txt"];
-    if (![report writeToFile:exportPath atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+    NSMutableString *combined = [NSMutableString stringWithString:report];
+    NSUInteger rendererCount = 0;
+    NSFileManager *manager = NSFileManager.defaultManager;
+    for (NSString *directory in @[@"/var/mobile/Library/Logs", @"/var/mobile/Library/Preferences"]) {
+        for (NSString *name in [manager contentsOfDirectoryAtPath:directory error:nil]) {
+            if (![name hasPrefix:@"RemoveWidgetBackground-renderer-"] || ![name hasSuffix:@".txt"]) continue;
+            NSString *renderer = [NSString stringWithContentsOfFile:[directory stringByAppendingPathComponent:name]
+                                                            encoding:NSUTF8StringEncoding error:nil];
+            if (renderer.length) {
+                rendererCount++;
+                [combined appendFormat:@"\n\n===== Renderer %lu: %@ =====\n%@",
+                    (unsigned long)rendererCount, name, renderer];
+            }
+        }
+    }
+    [combined appendFormat:@"\n\nRenderer reports found: %lu\n", (unsigned long)rendererCount];
+    NSString *exportPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"RemoveWidgetBackground-diagnostic2.txt"];
+    if (![combined writeToFile:exportPath atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"导出失败"
             message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];

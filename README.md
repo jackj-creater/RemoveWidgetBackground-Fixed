@@ -2,7 +2,27 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Candidate build: 2.1.3~test2
+## Diagnostic build: 2.1.3~diagnostic2
+
+The affected iOS 17.1.1 device showed no visible improvement with test2. During
+both SpringBoard captures, the user saw the widget's normal background return for
+1–2 seconds while its content remained visible. Sampled host backgrounds stayed
+clear, effect views stayed hidden, and every recorded persisted-snapshot update
+was suppressed. This rules out test2 as an effective visual fix and shifts the
+next measurement to the widget renderer.
+
+Diagnostic2 keeps test2 rendering behavior. During the explicitly started,
+bounded capture it also records, inside each active WidgetRenderer process:
+
+- whether the scene and cached window state identify the widget as selected;
+- the dimensions and order of large rectangles passed to the removal heuristic;
+- whether each rectangle was kept or replaced with an empty rectangle.
+
+Renderer reports contain no widget text, images, pixels, screenshots, or display-
+list contents. They are capped, written only during the capture, and merged with
+the SpringBoard report by the export button. This build is diagnostic only.
+
+## Previous candidate: 2.1.3~test2
 
 The diagnostic1 device capture on iOS 17.1.1 overlapped a user-confirmed 1–2 second
 black flash. Recorded host backgrounds were clear, effect views hidden, and eight

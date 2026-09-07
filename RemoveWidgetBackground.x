@@ -130,6 +130,8 @@ static void ReloadPrefs() {
 @interface SBHWidgetViewController : UIViewController
 @end
 
+#import "RWBRendererDiagnostics.h"
+
 @interface CHUISWidgetHostViewController : UIViewController
 @property (nonatomic, copy) CHSWidget *widget;
 @property (nonatomic) BOOL drawSystemBackgroundMaterialIfNecessary;
@@ -630,7 +632,12 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     UIView *view = (UIView *)self.delegate;
     UIWindow *window = [view isKindOfClass:[UIView class]] ? view.window : nil;
 
+    BOOL sceneTarget = RWBShouldHideBackgroundForScene(window.windowScene);
+    BOOL cachedTarget = window.rwb_shouldHideBackground.boolValue;
     BOOL shouldHide = [view isKindOfClass:[UIView class]] && RWBRefreshWindowTarget(window);
+    NSMutableDictionary *diagnosticFrame = RWBRendererDiagnosticPushFrame(
+        self, [view isKindOfClass:UIView.class] ? view : nil, window,
+        sceneTarget, cachedTarget, shouldHide);
     NSMutableDictionary *threadDictionary = [NSThread currentThread].threadDictionary;
     // Also isolate a non-target child from an active target parent. Otherwise
     // its shapes inherit the parent's removal flag and advance its counter.
@@ -645,12 +652,17 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
             %orig;
         } @finally {
             RWBPopDrawingState(threadDictionary, saved);
+            RWBRendererDiagnosticPopFrame(diagnosticFrame, self);
         }
 
         return;
     }
 
-    %orig;
+    @try {
+        %orig;
+    } @finally {
+        RWBRendererDiagnosticPopFrame(diagnosticFrame, self);
+    }
 }
 
 %end
@@ -711,23 +723,22 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 
 - (void)setRect:(CGRect)arg1 {
     NSMutableDictionary *threadDict = [NSThread currentThread].threadDictionary;
+    BOOL isLarge = arg1.size.width > kMaxWidgetWidth && arg1.size.height > kMaxWidgetHeight;
+    BOOL suppress = NO;
     if (threadDict[@"rwb_shouldHideBackground"]) {
-        if (arg1.size.width > kMaxWidgetWidth && arg1.size.height > kMaxWidgetHeight) {
+        if (isLarge) {
             NSNumber *firstN = threadDict[@"rwb_didSkipFirstN"];
             if ([firstN intValue] > 1) {
-                %orig(CGRectZero);
-                return;
-            }
-            int newN = firstN ? [firstN intValue] + 1 : 0;
-            threadDict[@"rwb_didSkipFirstN"] = @(newN);
-            if (newN == 1) {
-                // Bypass the first background rect
-                %orig(CGRectZero);
-                return;
+                suppress = YES;
+            } else {
+                int newN = firstN ? [firstN intValue] + 1 : 0;
+                threadDict[@"rwb_didSkipFirstN"] = @(newN);
+                if (newN == 1) suppress = YES;
             }
         }
     }
-    %orig;
+    RWBRendererDiagnosticRecordRect(arg1, isLarge, suppress);
+    %orig(suppress ? CGRectZero : arg1);
 }
 
 %end
@@ -768,6 +779,13 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
             %init(RWB_16);
         } else {
             %init(RWB_15);
+        }
+        if (gIsWidgetRenderer) {
+            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+                RWBRendererDiagnosticDarwinBegin,
+                CFSTR("com.82flex.removewidgetbg/diagnostic-begin"), NULL,
+                CFNotificationSuspensionBehaviorDeliverImmediately);
+            RWBRendererDiagnosticDarwinBegin(NULL, NULL, NULL, NULL, NULL);
         }
     }
 }

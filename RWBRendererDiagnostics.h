@@ -1,0 +1,153 @@
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+#import <unistd.h>
+
+static NSString *const RWBRendererDiagnosticPrefix = @"RemoveWidgetBackground-renderer-";
+static NSMutableString *RWBRendererDiagnosticReport;
+static NSObject *RWBRendererDiagnosticLock;
+static NSString *RWBRendererDiagnosticPath;
+static NSTimeInterval RWBRendererDiagnosticStarted;
+static NSTimeInterval RWBRendererDiagnosticDeadline;
+static NSTimeInterval RWBRendererDiagnosticLastWrite;
+static NSString *RWBRendererDiagnosticLastSignature;
+static NSTimeInterval RWBRendererDiagnosticLastSignatureTime;
+static BOOL RWBRendererDiagnosticActive;
+static NSUInteger RWBRendererDiagnosticGeneration;
+static const NSUInteger RWBRendererDiagnosticLimit = 256 * 1024;
+static NSString *const RWBRendererDiagnosticFrameKey = @"rwb_rendererDiagnosticFrame";
+
+static BOOL RWBRendererDiagnosticWriteLocked(void) {
+    if (!RWBRendererDiagnosticPath || !RWBRendererDiagnosticReport) return NO;
+    return [RWBRendererDiagnosticReport writeToFile:RWBRendererDiagnosticPath atomically:YES
+                                           encoding:NSUTF8StringEncoding error:nil];
+}
+
+static void RWBRendererDiagnosticAppend(NSString *line) {
+    if (!RWBRendererDiagnosticActive || !line) return;
+    @synchronized (RWBRendererDiagnosticLock) {
+        if (!RWBRendererDiagnosticActive || RWBRendererDiagnosticReport.length >= RWBRendererDiagnosticLimit) return;
+        NSString *entry = [NSString stringWithFormat:@"+%.3fs %@\n",
+            NSProcessInfo.processInfo.systemUptime - RWBRendererDiagnosticStarted, line];
+        NSUInteger room = RWBRendererDiagnosticLimit - RWBRendererDiagnosticReport.length;
+        [RWBRendererDiagnosticReport appendString:entry.length <= room ? entry : [entry substringToIndex:room]];
+        NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+        if (now - RWBRendererDiagnosticLastWrite >= 1.0) {
+            RWBRendererDiagnosticLastWrite = now;
+            RWBRendererDiagnosticWriteLocked();
+        }
+    }
+}
+
+static NSString *RWBRendererDiagnosticWritablePath(void) {
+    NSString *name = [NSString stringWithFormat:@"%@%d.txt", RWBRendererDiagnosticPrefix, getpid()];
+    for (NSString *directory in @[@"/var/mobile/Library/Logs", @"/var/mobile/Library/Preferences"]) {
+        NSString *path = [directory stringByAppendingPathComponent:name];
+        if ([[NSFileManager defaultManager] isWritableFileAtPath:directory]) return path;
+    }
+    return nil;
+}
+
+static void RWBRendererDiagnosticFinish(NSUInteger generation) {
+    @synchronized (RWBRendererDiagnosticLock) {
+        if (!RWBRendererDiagnosticActive || generation != RWBRendererDiagnosticGeneration) return;
+        [RWBRendererDiagnosticReport appendString:@"\nRenderer capture complete.\n"];
+        RWBRendererDiagnosticActive = NO;
+        RWBRendererDiagnosticWriteLocked();
+    }
+}
+
+static void RWBRendererDiagnosticBegin(NSTimeInterval deadline) {
+    NSTimeInterval nowWall = NSDate.date.timeIntervalSince1970;
+    if (deadline <= nowWall) return;
+    @synchronized (RWBRendererDiagnosticLock ?: (RWBRendererDiagnosticLock = [NSObject new])) {
+        RWBRendererDiagnosticGeneration++;
+        RWBRendererDiagnosticStarted = NSProcessInfo.processInfo.systemUptime;
+        RWBRendererDiagnosticDeadline = deadline;
+        RWBRendererDiagnosticLastWrite = 0;
+        RWBRendererDiagnosticLastSignature = nil;
+        RWBRendererDiagnosticLastSignatureTime = 0;
+        RWBRendererDiagnosticPath = RWBRendererDiagnosticWritablePath();
+        RWBRendererDiagnosticReport = [NSMutableString stringWithFormat:
+            @"RemoveWidgetBackground 2.1.3~diagnostic2 renderer\n%@\nOS %@\nbundle=%@ pid=%d\n"
+             "Records drawing dimensions/decisions only; no text, images, pixels, or display-list contents.\n",
+            NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString,
+            NSBundle.mainBundle.bundleIdentifier ?: @"unknown", getpid()];
+        RWBRendererDiagnosticActive = RWBRendererDiagnosticPath != nil;
+        RWBRendererDiagnosticWriteLocked();
+        NSUInteger generation = RWBRendererDiagnosticGeneration;
+        NSTimeInterval delay = MAX(0.1, deadline - nowWall);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ RWBRendererDiagnosticFinish(generation); });
+    }
+}
+
+static void RWBRendererDiagnosticMaybeBegin(NSTimeInterval deadline) {
+    if (deadline <= NSDate.date.timeIntervalSince1970) return;
+    if (RWBRendererDiagnosticActive && deadline == RWBRendererDiagnosticDeadline) return;
+    RWBRendererDiagnosticBegin(deadline);
+}
+
+static void RWBRendererDiagnosticDarwinBegin(CFNotificationCenterRef center, void *observer,
+                                              CFStringRef name, const void *object,
+                                              CFDictionaryRef userInfo) {
+    NSUserDefaults *prefs = [[NSUserDefaults alloc]
+        initWithSuiteName:@"/var/mobile/Library/Preferences/com.82flex.removewidgetbgprefs.plist"];
+    RWBRendererDiagnosticMaybeBegin([prefs doubleForKey:@"DiagnosticUntil"]);
+}
+
+static NSMutableDictionary *RWBRendererDiagnosticPushFrame(RBLayer *layer, UIView *view,
+                                                            UIWindow *window, BOOL sceneTarget,
+                                                            BOOL cachedTarget, BOOL effectiveTarget) {
+    if (!RWBRendererDiagnosticActive) return nil;
+    NSMutableDictionary *thread = NSThread.currentThread.threadDictionary;
+    NSMutableDictionary *frame = [@{
+        @"parent": thread[RWBRendererDiagnosticFrameKey] ?: NSNull.null,
+        @"layer": NSStringFromClass(layer.class) ?: @"?",
+        @"delegate": view ? (NSStringFromClass(view.class) ?: @"?") : @"nil",
+        @"scene": window.windowScene ? (NSStringFromClass(window.windowScene.class) ?: @"?") : @"nil",
+        @"sceneTarget": @(sceneTarget), @"cachedTarget": @(cachedTarget),
+        @"effectiveTarget": @(effectiveTarget), @"opaqueBefore": @(layer.opaque),
+        @"large": [NSMutableArray array]
+    } mutableCopy];
+    NSString *widgetID = nil;
+    if ([window.windowScene respondsToSelector:@selector(widget)]) {
+        CHSWidget *widget = [(id)window.windowScene widget];
+        widgetID = widget.extensionBundleIdentifier;
+    }
+    frame[@"widget"] = widgetID ?: @"nil";
+    thread[RWBRendererDiagnosticFrameKey] = frame;
+    return frame;
+}
+
+static void RWBRendererDiagnosticRecordRect(CGRect rect, BOOL isLarge, BOOL suppressed) {
+    if (!RWBRendererDiagnosticActive || !isLarge) return;
+    NSMutableDictionary *frame = NSThread.currentThread.threadDictionary[RWBRendererDiagnosticFrameKey];
+    NSMutableArray *large = frame[@"large"];
+    if (!large || large.count >= 16) return;
+    [large addObject:[NSString stringWithFormat:@"%lu:%@:%@",
+        (unsigned long)large.count + 1, suppressed ? @"drop" : @"keep", NSStringFromCGRect(rect)]];
+}
+
+static void RWBRendererDiagnosticPopFrame(NSMutableDictionary *frame, RBLayer *layer) {
+    if (!frame) return;
+    NSMutableDictionary *thread = NSThread.currentThread.threadDictionary;
+    id parent = frame[@"parent"];
+    if (parent == NSNull.null) [thread removeObjectForKey:RWBRendererDiagnosticFrameKey];
+    else thread[RWBRendererDiagnosticFrameKey] = parent;
+    NSArray *large = frame[@"large"];
+    if (!large.count && ![frame[@"effectiveTarget"] boolValue]) return;
+    NSString *signature = [NSString stringWithFormat:
+        @"layer=%@ delegate=%@ scene=%@ widget=%@ sceneTarget=%d cachedTarget=%d target=%d opaque=%d->%d large=[%@]",
+        frame[@"layer"], frame[@"delegate"], frame[@"scene"], frame[@"widget"],
+        [frame[@"sceneTarget"] boolValue], [frame[@"cachedTarget"] boolValue],
+        [frame[@"effectiveTarget"] boolValue], [frame[@"opaqueBefore"] boolValue], layer.opaque,
+        [large componentsJoinedByString:@"; "]];
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    @synchronized (RWBRendererDiagnosticLock) {
+        if ([signature isEqualToString:RWBRendererDiagnosticLastSignature] &&
+            now - RWBRendererDiagnosticLastSignatureTime < 0.25) return;
+        RWBRendererDiagnosticLastSignature = signature;
+        RWBRendererDiagnosticLastSignatureTime = now;
+    }
+    RWBRendererDiagnosticAppend(signature);
+}
