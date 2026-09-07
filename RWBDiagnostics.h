@@ -98,14 +98,15 @@ static void RWBDiagnosticPollDrawingStates(NSUInteger generation) {
             RWBDiagnosticDrawingLastStates[i] = state;
             RWBDiagnosticAppend([NSString stringWithFormat:
                 @"drawing-state process=%@ active=%d seq=%lu sceneTarget=%d cachedTarget=%d target=%d "
-                 "opaque=%d->%d large=%lu keptMask=0x%04lx sizeHash=0x%04lx",
+                 "opaque=%d->%d large=%lu keptMask=0x%04lx sizeHash=0x%04lx contents=%d restored=%d",
                 RWBDiagnosticDrawingNames[i], (int)((state >> 63) & 1),
                 (unsigned long)((state >> 46) & 0xFFF), (int)((state >> 62) & 1),
                 (int)((state >> 61) & 1), (int)((state >> 60) & 1),
                 (int)((state >> 59) & 1), (int)((state >> 58) & 1),
                 (unsigned long)((state >> 41) & 0x1F),
                 (unsigned long)((state >> 25) & 0xFFFF),
-                (unsigned long)((state >> 9) & 0xFFFF)]);
+                (unsigned long)((state >> 9) & 0xFFFF), (int)((state >> 8) & 1),
+                (int)((state >> 7) & 1)]);
         }
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 40), dispatch_get_main_queue(), ^{
@@ -162,7 +163,7 @@ static void RWBDiagnosticBegin(CFNotificationCenterRef center, void *observer, C
         RWBDiagnosticGeneration++;
         RWBDiagnosticStarted = NSProcessInfo.processInfo.systemUptime;
         RWBDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~test6 diagnostic4 SpringBoard\n%@\nOS %@\nRecording; export after 30 seconds.\n",
+            @"RemoveWidgetBackground 2.1.3~test7 diagnostic5 SpringBoard\n%@\nOS %@\nRecording; export after 30 seconds.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString];
         RWBDiagnosticLastStates = [NSMutableDictionary dictionary];
         RWBDiagnosticActive = YES;

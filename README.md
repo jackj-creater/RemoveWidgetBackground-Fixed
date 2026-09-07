@@ -2,7 +2,19 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Candidate build: 2.1.3~test6
+## Candidate build: 2.1.3~test7
+
+The test6 log proves that SpringBoard received every two-rectangle begin/end
+event, but the user still saw a blank widget. UIKit's snapshot view therefore did
+not retain the remotely hosted widget pixels. Test7 removes that ineffective
+SpringBoard overlay. Instead, the renderer holds the previous RBLayer contents
+across the transient two-rectangle display and restores them synchronously before
+Core Animation commits the frame. Normal four-rectangle output replaces the held
+frame as soon as the refresh completes. Diagnostic5 also records whether backing
+contents existed and whether restoration was applied; it never records pixels.
+Device validation is still required.
+
+## Previous candidate: 2.1.3~test6
 
 Test5 removed the black background on the affected device, confirming the
 two-rectangle transition diagnosis, but the whole widget disappeared for 1–2

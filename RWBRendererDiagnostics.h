@@ -86,7 +86,7 @@ static void RWBRendererDiagnosticBegin(NSTimeInterval deadline) {
         RWBRendererDiagnosticLastSignature = nil;
         RWBRendererDiagnosticLastSignatureTime = 0;
         RWBRendererDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~test6 diagnostic4 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
+            @"RemoveWidgetBackground 2.1.3~test7 diagnostic5 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
              "Records drawing dimensions/decisions only; no text, images, pixels, or display-list contents.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString,
             NSBundle.mainBundle.bundleIdentifier ?: @"unknown", getpid()];
@@ -144,6 +144,8 @@ static NSMutableDictionary *RWBRendererDiagnosticPushFrame(RBLayer *layer, UIVie
         @"scene": window.windowScene ? (NSStringFromClass(window.windowScene.class) ?: @"?") : @"nil",
         @"sceneTarget": @(sceneTarget), @"cachedTarget": @(cachedTarget),
         @"effectiveTarget": @(effectiveTarget), @"opaqueBefore": @(layer.opaque),
+        @"contentsBefore": @(layer.contents != nil || ((CALayer *)layer.presentationLayer).contents != nil),
+        @"restoredContents": @NO,
         @"large": [NSMutableArray array], @"largeCount": @0,
         @"keptMask": @0, @"sizeHash": @2166136261U
     } mutableCopy];
@@ -194,12 +196,15 @@ static void RWBRendererDiagnosticPopFrame(NSMutableDictionary *frame, RBLayer *l
     compact |= (uint64_t)([frame[@"largeCount"] unsignedIntegerValue] & 0x1F) << 41;
     compact |= (uint64_t)([frame[@"keptMask"] unsignedIntValue] & 0xFFFF) << 25;
     compact |= (uint64_t)([frame[@"sizeHash"] unsignedIntValue] & 0xFFFF) << 9;
+    compact |= (uint64_t)([frame[@"contentsBefore"] boolValue] ? 1 : 0) << 8;
+    compact |= (uint64_t)([frame[@"restoredContents"] boolValue] ? 1 : 0) << 7;
     RWBRendererDiagnosticPublishState(compact);
     NSString *signature = [NSString stringWithFormat:
-        @"layer=%@ delegate=%@ scene=%@ widget=%@ sceneTarget=%d cachedTarget=%d target=%d opaque=%d->%d large=[%@]",
+        @"layer=%@ delegate=%@ scene=%@ widget=%@ sceneTarget=%d cachedTarget=%d target=%d opaque=%d->%d contents=%d restored=%d large=[%@]",
         frame[@"layer"], frame[@"delegate"], frame[@"scene"], frame[@"widget"],
         [frame[@"sceneTarget"] boolValue], [frame[@"cachedTarget"] boolValue],
         [frame[@"effectiveTarget"] boolValue], [frame[@"opaqueBefore"] boolValue], layer.opaque,
+        [frame[@"contentsBefore"] boolValue], [frame[@"restoredContents"] boolValue],
         [large componentsJoinedByString:@"; "]];
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
     @synchronized (RWBRendererDiagnosticLock) {

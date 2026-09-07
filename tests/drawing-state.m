@@ -74,6 +74,12 @@ int main(void) {
         assert(RWBShouldSuppressIOS17LargeRect(rects));
         assert(RWBShouldSuppressIOS17LargeRect(rects));
         assert([rects[@"rwb_largeRectCount"] unsignedIntegerValue] == 2);
+
+        // Only a transient two-rectangle frame with real prior contents is
+        // eligible for synchronous backing-content restoration.
+        assert(RWBShouldRestorePreviousContents(2, YES));
+        assert(!RWBShouldRestorePreviousContents(2, NO));
+        assert(!RWBShouldRestorePreviousContents(4, YES));
         puts("Drawing state tests passed: nested targets, non-targets, exceptions, consecutive frames.");
     }
     return 0;

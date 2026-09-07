@@ -139,104 +139,10 @@ static void ReloadPrefs() {
 @property (nonatomic, copy) CHSWidget *widget;
 @property (nonatomic) BOOL drawSystemBackgroundMaterialIfNecessary;
 @property (nonatomic, strong) NSNumber *rwb_shouldSuppressBackground;
-@property (nonatomic, strong) UIView *rwb_transitionSnapshot;
 - (void)_setBackgroundViewMode:(int)mode;
 @end
 
 static BOOL RWBShouldSuppressHostBackground(CHUISWidgetHostViewController *viewController);
-
-static NSHashTable<CHUISWidgetHostViewController *> *RWBTransitionHosts;
-static NSHashTable<RBLayer *> *RWBTwoRectLayers;
-static NSObject *RWBTwoRectLock;
-static NSUInteger RWBTransitionGeneration;
-
-static void RWBTrackTransitionHost(CHUISWidgetHostViewController *host) {
-    if (![NSThread isMainThread] || !host) return;
-    if (!RWBTransitionHosts) RWBTransitionHosts = [NSHashTable weakObjectsHashTable];
-    [RWBTransitionHosts addObject:host];
-}
-
-static void RWBPrepareTransitionSnapshot(CHUISWidgetHostViewController *host) {
-    if (!host.isViewLoaded || !RWBShouldSuppressHostBackground(host)) return;
-    [host.rwb_transitionSnapshot removeFromSuperview];
-    UIView *snapshot = [host.view snapshotViewAfterScreenUpdates:NO];
-    if (!snapshot) return;
-    snapshot.frame = host.view.bounds;
-    snapshot.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    snapshot.userInteractionEnabled = NO;
-    snapshot.backgroundColor = UIColor.clearColor;
-    snapshot.opaque = NO;
-    snapshot.layer.opaque = NO;
-    host.rwb_transitionSnapshot = snapshot;
-}
-
-static void RWBRemoveTransitionSnapshots(BOOL animated) {
-    for (CHUISWidgetHostViewController *host in RWBTransitionHosts.allObjects) {
-        UIView *snapshot = host.rwb_transitionSnapshot;
-        if (!snapshot.superview) continue;
-        if (!animated) {
-            [snapshot removeFromSuperview];
-            host.rwb_transitionSnapshot = nil;
-            continue;
-        }
-        [UIView animateWithDuration:0.15 animations:^{ snapshot.alpha = 0; }
-                         completion:^(BOOL finished) {
-            [snapshot removeFromSuperview];
-            if (host.rwb_transitionSnapshot == snapshot) host.rwb_transitionSnapshot = nil;
-        }];
-    }
-}
-
-static void RWBTransitionPhaseChanged(CFNotificationCenterRef center, void *observer,
-                                      CFStringRef name, const void *object,
-                                      CFDictionaryRef userInfo) {
-    BOOL began = [(__bridge NSString *)name hasSuffix:@"begin"];
-    dispatch_async(dispatch_get_main_queue(), ^{
-        NSUInteger generation = ++RWBTransitionGeneration;
-        RWBDiagnosticAppend(began ? @"two-rectangle transition began; showing cached transparent frame"
-                                  : @"two-rectangle transition ended; fading cached frame");
-        if (!began) {
-            RWBRemoveTransitionSnapshots(YES);
-            return;
-        }
-        for (CHUISWidgetHostViewController *host in RWBTransitionHosts.allObjects) {
-            UIView *snapshot = host.rwb_transitionSnapshot;
-            if (snapshot && host.view.window && !snapshot.superview) {
-                snapshot.alpha = 1;
-                snapshot.frame = host.view.bounds;
-                [host.view addSubview:snapshot];
-            }
-        }
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC),
-                       dispatch_get_main_queue(), ^{
-            if (generation == RWBTransitionGeneration) {
-                ++RWBTransitionGeneration;
-                RWBRemoveTransitionSnapshots(YES);
-            }
-        });
-    });
-}
-
-static void RWBUpdateTwoRectTransition(RBLayer *layer, NSUInteger largeRectCount) {
-    if (!layer) return;
-    if (!RWBTwoRectLock) RWBTwoRectLock = [NSObject new];
-    BOOL postBegin = NO, postEnd = NO;
-    @synchronized (RWBTwoRectLock) {
-        if (!RWBTwoRectLayers) RWBTwoRectLayers = [NSHashTable weakObjectsHashTable];
-        NSUInteger before = RWBTwoRectLayers.allObjects.count;
-        if (largeRectCount == 2) [RWBTwoRectLayers addObject:layer];
-        else [RWBTwoRectLayers removeObject:layer];
-        NSUInteger after = RWBTwoRectLayers.allObjects.count;
-        postBegin = before == 0 && after > 0;
-        postEnd = before > 0 && after == 0;
-    }
-    if (postBegin || postEnd) {
-        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-            postBegin ? CFSTR("com.82flex.removewidgetbg/two-rect-begin")
-                      : CFSTR("com.82flex.removewidgetbg/two-rect-end"),
-            NULL, NULL, YES);
-    }
-}
 
 @interface SBHWidgetStackViewController : UIViewController
 @end
@@ -409,7 +315,6 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 %hook CHUISWidgetHostViewController
 
 %property (nonatomic, strong) NSNumber *rwb_shouldSuppressBackground;
-%property (nonatomic, strong) UIView *rwb_transitionSnapshot;
 
 // iOS 17 calls this again when SpringBoard restores widgets after unlocking.
 // Mode 1 creates an opaque color view (black in dark appearance), while mode 0
@@ -460,7 +365,6 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 
 - (void)setWidget:(CHSWidget *)widget {
     RWBDiagnosticTrack(self);
-    RWBTrackTransitionHost(self);
     if (RWBDiagnosticActive) RWBDiagnosticEvent(self, [NSString stringWithFormat:@"setWidget incoming=%@", widget.extensionBundleIdentifier ?: @"nil"]);
     // setWidget: can synchronously choose and install a host background. Mark
     // the new widget before entering Apple's implementation so nested calls to
@@ -493,25 +397,10 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 - (void)viewWillAppear:(BOOL)arg1 {
     RWBEnforceHostTransparency(self);
     RWBDiagnosticTrack(self);
-    RWBTrackTransitionHost(self);
     RWBDiagnosticEvent(self, @"viewWillAppear before original");
     %orig;
     RWBDiagnosticEvent(self, @"viewWillAppear after original");
     RWBEnforceHostTransparency(self);
-}
-
-- (void)viewDidAppear:(BOOL)animated {
-    %orig;
-    RWBTrackTransitionHost(self);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4),
-                   dispatch_get_main_queue(), ^{
-        if (!self.rwb_transitionSnapshot.superview) RWBPrepareTransitionSnapshot(self);
-    });
-}
-
-- (void)viewWillDisappear:(BOOL)animated {
-    RWBPrepareTransitionSnapshot(self);
-    %orig;
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
@@ -753,6 +642,15 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     BOOL sceneTarget = RWBShouldHideBackgroundForScene(window.windowScene);
     BOOL cachedTarget = window.rwb_shouldHideBackground.boolValue;
     BOOL shouldHide = [view isKindOfClass:[UIView class]] && RWBRefreshWindowTarget(window);
+    // Keep a strong reference to the already-presented backing contents. A
+    // display call completes before Core Animation commits its transaction, so
+    // restoring this object in the same call prevents the transient two-rect
+    // display list from ever replacing the last stable widget frame onscreen.
+    id previousContents = shouldHide ? self.contents : nil;
+    if (shouldHide && !previousContents) {
+        CALayer *presentationLayer = (CALayer *)self.presentationLayer;
+        previousContents = presentationLayer.contents;
+    }
     NSMutableDictionary *diagnosticFrame = RWBRendererDiagnosticPushFrame(
         self, [view isKindOfClass:UIView.class] ? view : nil, window,
         sceneTarget, cachedTarget, shouldHide);
@@ -779,7 +677,15 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
             if (shouldHide) {
                 if (@available(iOS 17, *)) {
                     NSNumber *largeRectCount = threadDictionary[@"rwb_largeRectCount"];
-                    RWBUpdateTwoRectTransition(self, largeRectCount.unsignedIntegerValue);
+                    BOOL restored = RWBShouldRestorePreviousContents(
+                        largeRectCount.unsignedIntegerValue, previousContents != nil);
+                    if (restored) {
+                        [CATransaction begin];
+                        [CATransaction setDisableActions:YES];
+                        self.contents = previousContents;
+                        [CATransaction commit];
+                    }
+                    if (diagnosticFrame) diagnosticFrame[@"restoredContents"] = @(restored);
                     self.rwb_previousLargeRectCount = largeRectCount;
                 }
             }
@@ -896,12 +802,6 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
             RWBDiagnosticDrawingStatus,
             CFSTR("com.82flex.removewidgetbg/renderer-capture-started"), NULL,
-            CFNotificationSuspensionBehaviorDeliverImmediately);
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
-            RWBTransitionPhaseChanged, CFSTR("com.82flex.removewidgetbg/two-rect-begin"), NULL,
-            CFNotificationSuspensionBehaviorDeliverImmediately);
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
-            RWBTransitionPhaseChanged, CFSTR("com.82flex.removewidgetbg/two-rect-end"), NULL,
             CFNotificationSuspensionBehaviorDeliverImmediately);
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
             RWBDiagnosticDrawingStatus,
