@@ -99,7 +99,7 @@ static void RWBDiagnosticPollDrawingStates(NSUInteger generation) {
             RWBDiagnosticAppend([NSString stringWithFormat:
                 @"drawing-state process=%@ active=%d seq=%lu sceneTarget=%d cachedTarget=%d target=%d "
                  "opaque=%d->%d large=%lu keptMask=0x%04lx sizeHash=0x%04lx contents=%d restored=%d "
-                 "listHook=%d listCount2=%d stable=%d substituted=%d encoded=%d decoded=%d replayRects=%d",
+                 "probeHook=%d probeCount2=%d stable=%d displaySkipped=%d encoded=%d decoded=%d replayRects=%d",
                 RWBDiagnosticDrawingNames[i], (int)((state >> 63) & 1),
                 (unsigned long)((state >> 46) & 0xFFF), (int)((state >> 62) & 1),
                 (int)((state >> 61) & 1), (int)((state >> 60) & 1),
@@ -167,7 +167,7 @@ static void RWBDiagnosticBegin(CFNotificationCenterRef center, void *observer, C
         RWBDiagnosticGeneration++;
         RWBDiagnosticStarted = NSProcessInfo.processInfo.systemUptime;
         RWBDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~test11 diagnostic9 SpringBoard\n%@\nOS %@\nRecording; export after 30 seconds.\n",
+            @"RemoveWidgetBackground 2.1.3~test12 diagnostic10 SpringBoard\n%@\nOS %@\nRecording; export after 30 seconds.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString];
         RWBDiagnosticLastStates = [NSMutableDictionary dictionary];
         RWBDiagnosticActive = YES;

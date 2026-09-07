@@ -2,7 +2,21 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Candidate build: 2.1.3~test11
+## Candidate build: 2.1.3~test12
+
+Diagnostic9 confirmed that enabling SpringBoard's persisted snapshot caused the
+new page-transition regression: its UIImageView changed from hidden to visible
+and remained opaque, so the stock widget appeared before the live transparent
+surface. Test12 restores snapshot suppression. It then moves transient-frame
+handling one level earlier, to `RBLayer displayWithBounds:callback:`. The draw
+callback is preflighted into a throwaway display list; when exactly two
+full-size rectangles are measured, the real RenderBox display is not started at
+all. This prevents an empty drawable from replacing the previous complete
+surface. Normal lists proceed through the existing transparent render path.
+Diagnostic10 records preflight detection and whether submission was skipped.
+Device validation is required.
+
+## Previous candidate: 2.1.3~test11
 
 Diagnostic8 showed that none of 415 measured transient frames could encode a
 standalone RBDisplayList when no private resource delegate was available

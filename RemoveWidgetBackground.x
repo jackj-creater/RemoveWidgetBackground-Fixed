@@ -122,8 +122,16 @@ static void ReloadPrefs() {
 @property (nonatomic, strong) NSNumber *rwb_shouldHideBackground;
 @end
 
+@class RBDisplayList;
+typedef void (^RWBDisplayListCallback)(RBDisplayList *list);
+
 @interface RBLayer : CALayer
 @property (nonatomic, strong) NSNumber *rwb_previousLargeRectCount;
+- (BOOL)displayWithBounds:(CGRect)bounds callback:(RWBDisplayListCallback)callback;
+@end
+
+@interface RBDisplayList : NSObject
+- (void)setContentRect:(CGRect)rect;
 @end
 
 @interface SBHWidgetViewController : UIViewController
@@ -438,27 +446,29 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 
 - (void)_updatePersistedSnapshotContent {
     RWBDiagnosticEvent(self, @"persisted snapshot update entered");
-    // iOS 17 asks for this stable image shortly before WidgetRenderer submits
-    // its temporary two-rectangle refresh list. Let SpringBoard retain that
-    // last complete frame so it can bridge the remote surface handoff.
+    // The persisted image contains the stock opaque widget background. Letting
+    // SpringBoard reveal it makes page transitions flash from opaque to clear.
+    if (RWBShouldSuppressHostBackground(self)) {
+        RWBEnforceHostTransparency(self);
+        RWBDiagnosticEvent(self, @"persisted snapshot update suppressed");
+        return;
+    }
+
     %orig;
-    RWBEnforceHostTransparency(self);
-    RWBDiagnosticEvent(self, @"persisted snapshot update completed");
 }
 
 - (void)_updatePersistedSnapshotContentIfNecessary {
     RWBDiagnosticEvent(self, @"persisted snapshot conditional update entered");
+    if (RWBShouldSuppressHostBackground(self)) {
+        RWBEnforceHostTransparency(self);
+        return;
+    }
+
     %orig;
-    RWBEnforceHostTransparency(self);
-    RWBDiagnosticEvent(self, @"persisted snapshot conditional update completed");
 }
 
 /* iOS 16.0 to 16.2 */
 - (id)_snapshotImageFromURL:(id)arg1 {
-    if (@available(iOS 17, *)) {
-        return %orig;
-    }
-
     CHSWidget *widget = self.widget;
     if ([widget isKindOfClass:%c(CHSWidget)] &&
         widget.extensionBundleIdentifier &&
@@ -658,12 +668,13 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 
             %orig;
         } @finally {
-            if (shouldHide) {
+            if (shouldHide && ![threadDictionary[@"rwb_displaySkipped"] boolValue]) {
                 if (@available(iOS 17, *)) {
                     NSNumber *largeRectCount = threadDictionary[@"rwb_largeRectCount"];
                     self.rwb_previousLargeRectCount = largeRectCount;
                 }
             }
+            [threadDictionary removeObjectForKey:@"rwb_displaySkipped"];
             RWBPopDrawingState(threadDictionary, saved);
             RWBRendererDiagnosticPopFrame(diagnosticFrame, self);
         }
@@ -676,6 +687,53 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     } @finally {
         RWBRendererDiagnosticPopFrame(diagnosticFrame, self);
     }
+}
+
+// RenderBox creates a new drawable after this method begins, so suppressing
+// shapes inside the callback still commits an empty frame. Run the delegate's
+// callback once against a throwaway list first. If it is the measured iOS 17
+// two-rectangle refresh form, return before RenderBox allocates/submits a new
+// surface; the previous complete drawable remains visible without a snapshot.
+- (BOOL)displayWithBounds:(CGRect)bounds callback:(RWBDisplayListCallback)callback {
+    NSMutableDictionary *threadDictionary = NSThread.currentThread.threadDictionary;
+    BOOL target = [threadDictionary[@"rwb_shouldHideBackground"] boolValue];
+    if (!target || !callback) return %orig(bounds, callback);
+    if (@available(iOS 17, *)) {
+        // Continue with the preflight below.
+    } else {
+        return %orig(bounds, callback);
+    }
+
+    Class displayListClass = NSClassFromString(@"RBDisplayList");
+    RBDisplayList *probeList = displayListClass ? [displayListClass new] : nil;
+    if (!probeList) return %orig(bounds, callback);
+
+    CGFloat scale = self.contentsScale > 0 ? self.contentsScale : 1;
+    [probeList setContentRect:CGRectMake(0, 0, bounds.size.width * scale,
+                                         bounds.size.height * scale)];
+    NSDictionary *saved = RWBPushDrawingState(threadDictionary, YES);
+    NSUInteger probeLargeRectCount = 0;
+    threadDictionary[@"rwb_isProbingDisplayList"] = @YES;
+    @try {
+        callback(probeList);
+        probeLargeRectCount = [threadDictionary[@"rwb_largeRectCount"] unsignedIntegerValue];
+    } @finally {
+        [threadDictionary removeObjectForKey:@"rwb_isProbingDisplayList"];
+        RWBPopDrawingState(threadDictionary, saved);
+    }
+
+    NSMutableDictionary *diagnosticFrame = threadDictionary[@"rwb_rendererDiagnosticFrame"];
+    if (diagnosticFrame) {
+        diagnosticFrame[@"displayListHook"] = @YES;
+        diagnosticFrame[@"displayListCountIsTwo"] = @(probeLargeRectCount == 2);
+    }
+    if (RWBShouldSkipDisplayAfterProbe(probeLargeRectCount)) {
+        threadDictionary[@"rwb_displaySkipped"] = @YES;
+        if (diagnosticFrame) diagnosticFrame[@"substitutedDisplayList"] = @YES;
+        return NO;
+    }
+
+    return %orig(bounds, callback);
 }
 
 %end

@@ -27,14 +27,8 @@ static BOOL RWBShouldSuppressIOS17LargeRect(NSMutableDictionary *threadDictionar
     return suppress;
 }
 
-static BOOL RWBShouldUseStableDisplayList(NSUInteger largeRectCount,
-                                          BOOL hasStableDisplayList) {
-    return largeRectCount == 2 && hasStableDisplayList;
-}
-
-static BOOL RWBShouldCacheDisplayList(NSUInteger largeRectCount,
-                                      BOOL hasDisplayList) {
-    return largeRectCount >= 4 && hasDisplayList;
+static BOOL RWBShouldSkipDisplayAfterProbe(NSUInteger largeRectCount) {
+    return largeRectCount == 2;
 }
 
 static NSDictionary *RWBPushDrawingState(NSMutableDictionary *threadDictionary, BOOL enabled) {

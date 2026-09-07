@@ -75,15 +75,12 @@ int main(void) {
         assert(RWBShouldSuppressIOS17LargeRect(rects));
         assert([rects[@"rwb_largeRectCount"] unsignedIntegerValue] == 2);
 
-        // A normal list is cached, then substituted only for the measured
-        // transient two-rectangle form.
-        assert(RWBShouldCacheDisplayList(4, YES));
-        assert(RWBShouldCacheDisplayList(5, YES));
-        assert(!RWBShouldCacheDisplayList(2, YES));
-        assert(!RWBShouldCacheDisplayList(4, NO));
-        assert(RWBShouldUseStableDisplayList(2, YES));
-        assert(!RWBShouldUseStableDisplayList(2, NO));
-        assert(!RWBShouldUseStableDisplayList(4, YES));
+        // Only the measured two-rectangle refresh form is rejected before it
+        // can replace the layer's previous drawable.
+        assert(RWBShouldSkipDisplayAfterProbe(2));
+        assert(!RWBShouldSkipDisplayAfterProbe(0));
+        assert(!RWBShouldSkipDisplayAfterProbe(4));
+        assert(!RWBShouldSkipDisplayAfterProbe(5));
         puts("Drawing state tests passed: nested targets, non-targets, exceptions, consecutive frames.");
     }
     return 0;

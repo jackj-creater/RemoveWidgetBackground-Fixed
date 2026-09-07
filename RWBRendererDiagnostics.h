@@ -86,7 +86,7 @@ static void RWBRendererDiagnosticBegin(NSTimeInterval deadline) {
         RWBRendererDiagnosticLastSignature = nil;
         RWBRendererDiagnosticLastSignatureTime = 0;
         RWBRendererDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~test11 diagnostic9 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
+            @"RemoveWidgetBackground 2.1.3~test12 diagnostic10 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
              "Records drawing dimensions/decisions only; no text, images, pixels, or display-list contents.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString,
             NSBundle.mainBundle.bundleIdentifier ?: @"unknown", getpid()];
@@ -165,6 +165,7 @@ static NSMutableDictionary *RWBRendererDiagnosticPushFrame(RBLayer *layer, UIVie
 
 static void RWBRendererDiagnosticRecordRect(CGRect rect, BOOL isLarge, BOOL suppressed) {
     if (!RWBRendererDiagnosticActive || !isLarge) return;
+    if ([NSThread.currentThread.threadDictionary[@"rwb_isProbingDisplayList"] boolValue]) return;
     if ([NSThread.currentThread.threadDictionary[@"rwb_isReplayingStableDisplayList"] boolValue]) return;
     NSMutableDictionary *frame = NSThread.currentThread.threadDictionary[RWBRendererDiagnosticFrameKey];
     if (!frame) return;
@@ -212,7 +213,7 @@ static void RWBRendererDiagnosticPopFrame(NSMutableDictionary *frame, RBLayer *l
     compact |= (uint64_t)([frame[@"replayProducedNormalRects"] boolValue] ? 1 : 0);
     RWBRendererDiagnosticPublishState(compact);
     NSString *signature = [NSString stringWithFormat:
-        @"layer=%@ delegate=%@ scene=%@ widget=%@ sceneTarget=%d cachedTarget=%d target=%d opaque=%d->%d contents=%d restored=%d listHook=%d listCount2=%d stable=%d substituted=%d encoded=%d decoded=%d replayRects=%d large=[%@]",
+        @"layer=%@ delegate=%@ scene=%@ widget=%@ sceneTarget=%d cachedTarget=%d target=%d opaque=%d->%d contents=%d restored=%d probeHook=%d probeCount2=%d stable=%d displaySkipped=%d encoded=%d decoded=%d replayRects=%d large=[%@]",
         frame[@"layer"], frame[@"delegate"], frame[@"scene"], frame[@"widget"],
         [frame[@"sceneTarget"] boolValue], [frame[@"cachedTarget"] boolValue],
         [frame[@"effectiveTarget"] boolValue], [frame[@"opaqueBefore"] boolValue], layer.opaque,
