@@ -38,13 +38,9 @@ static void RWBRendererDiagnosticAppend(NSString *line) {
     }
 }
 
-static NSString *RWBRendererDiagnosticWritablePath(void) {
-    NSString *name = [NSString stringWithFormat:@"%@%d.txt", RWBRendererDiagnosticPrefix, getpid()];
-    for (NSString *directory in @[@"/var/mobile/Library/Logs", @"/var/mobile/Library/Preferences"]) {
-        NSString *path = [directory stringByAppendingPathComponent:name];
-        if ([[NSFileManager defaultManager] isWritableFileAtPath:directory]) return path;
-    }
-    return nil;
+static void RWBRendererDiagnosticPostStatus(CFStringRef name) {
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), name,
+                                         NULL, NULL, YES);
 }
 
 static void RWBRendererDiagnosticFinish(NSUInteger generation) {
@@ -66,14 +62,26 @@ static void RWBRendererDiagnosticBegin(NSTimeInterval deadline) {
         RWBRendererDiagnosticLastWrite = 0;
         RWBRendererDiagnosticLastSignature = nil;
         RWBRendererDiagnosticLastSignatureTime = 0;
-        RWBRendererDiagnosticPath = RWBRendererDiagnosticWritablePath();
         RWBRendererDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~diagnostic2 renderer\n%@\nOS %@\nbundle=%@ pid=%d\n"
+            @"RemoveWidgetBackground 2.1.3~diagnostic3 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
              "Records drawing dimensions/decisions only; no text, images, pixels, or display-list contents.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString,
             NSBundle.mainBundle.bundleIdentifier ?: @"unknown", getpid()];
+        RWBRendererDiagnosticPath = nil;
+        NSString *name = [NSString stringWithFormat:@"%@%d.txt", RWBRendererDiagnosticPrefix, getpid()];
+        for (NSString *directory in @[@"/var/mobile/Library/Logs", @"/var/mobile/Library/Preferences"]) {
+            NSString *candidate = [directory stringByAppendingPathComponent:name];
+            if ([RWBRendererDiagnosticReport writeToFile:candidate atomically:YES
+                                                encoding:NSUTF8StringEncoding error:nil]) {
+                RWBRendererDiagnosticPath = candidate;
+                break;
+            }
+        }
         RWBRendererDiagnosticActive = RWBRendererDiagnosticPath != nil;
-        RWBRendererDiagnosticWriteLocked();
+        RWBRendererDiagnosticPostStatus(RWBRendererDiagnosticActive
+            ? CFSTR("com.82flex.removewidgetbg/renderer-capture-started")
+            : CFSTR("com.82flex.removewidgetbg/renderer-capture-write-failed"));
+        if (!RWBRendererDiagnosticActive) return;
         NSUInteger generation = RWBRendererDiagnosticGeneration;
         NSTimeInterval delay = MAX(0.1, deadline - nowWall);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
@@ -90,9 +98,13 @@ static void RWBRendererDiagnosticMaybeBegin(NSTimeInterval deadline) {
 static void RWBRendererDiagnosticDarwinBegin(CFNotificationCenterRef center, void *observer,
                                               CFStringRef name, const void *object,
                                               CFDictionaryRef userInfo) {
+    ReloadPrefs();
+    NSTimeInterval deadline = kDiagnosticUntil;
     NSUserDefaults *prefs = [[NSUserDefaults alloc]
         initWithSuiteName:@"/var/mobile/Library/Preferences/com.82flex.removewidgetbgprefs.plist"];
-    RWBRendererDiagnosticMaybeBegin([prefs doubleForKey:@"DiagnosticUntil"]);
+    [prefs synchronize];
+    deadline = MAX(deadline, [prefs doubleForKey:@"DiagnosticUntil"]);
+    RWBRendererDiagnosticMaybeBegin(deadline);
 }
 
 static NSMutableDictionary *RWBRendererDiagnosticPushFrame(RBLayer *layer, UIView *view,

@@ -69,6 +69,16 @@ static BOOL RWBDiagnosticWrite(void) {
                                  encoding:NSUTF8StringEncoding error:nil];
 }
 
+static void RWBDiagnosticDrawingStatus(CFNotificationCenterRef center, void *observer,
+                                       CFStringRef name, const void *object,
+                                       CFDictionaryRef userInfo) {
+    if (!RWBDiagnosticActive) return;
+    NSString *event = [(__bridge NSString *)name hasSuffix:@"write-failed"]
+        ? @"drawing process received capture request but could not write report"
+        : @"drawing process capture started";
+    dispatch_async(dispatch_get_main_queue(), ^{ RWBDiagnosticAppend(event); });
+}
+
 static void RWBDiagnosticSample(NSUInteger generation, NSUInteger tick) {
     if (!RWBDiagnosticActive || generation != RWBDiagnosticGeneration) return;
     NSUInteger count = 0;
@@ -118,7 +128,7 @@ static void RWBDiagnosticBegin(CFNotificationCenterRef center, void *observer, C
         RWBDiagnosticGeneration++;
         RWBDiagnosticStarted = NSProcessInfo.processInfo.systemUptime;
         RWBDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~diagnostic2 SpringBoard\n%@\nOS %@\nRecording; export after 30 seconds.\n",
+            @"RemoveWidgetBackground 2.1.3~diagnostic3 SpringBoard\n%@\nOS %@\nRecording; export after 30 seconds.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString];
         RWBDiagnosticLastStates = [NSMutableDictionary dictionary];
         RWBDiagnosticActive = YES;

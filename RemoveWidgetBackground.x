@@ -15,6 +15,7 @@ static CGFloat kMaxWidgetWidth = 150;
 static CGFloat kMaxWidgetHeight = 150;
 static NSSet<NSString *> *kWidgetBundleIdentifiers = nil;
 static BOOL gIsWidgetRenderer = NO;
+static NSTimeInterval kDiagnosticUntil = 0;
 
 static void ReloadPrefs() {
     static NSUserDefaults *prefs = nil;
@@ -29,6 +30,7 @@ static void ReloadPrefs() {
     }
 
     NSDictionary *settings = [prefs dictionaryRepresentation];
+    kDiagnosticUntil = [settings[@"DiagnosticUntil"] doubleValue];
 
     if (settings[@"IsEnabled"]) {
         kIsEnabled = [settings[@"IsEnabled"] boolValue];
@@ -768,6 +770,14 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
             RWBDiagnosticBegin, CFSTR("com.82flex.removewidgetbg/diagnostic-begin"), NULL,
             CFNotificationSuspensionBehaviorDeliverImmediately);
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+            RWBDiagnosticDrawingStatus,
+            CFSTR("com.82flex.removewidgetbg/renderer-capture-started"), NULL,
+            CFNotificationSuspensionBehaviorDeliverImmediately);
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+            RWBDiagnosticDrawingStatus,
+            CFSTR("com.82flex.removewidgetbg/renderer-capture-write-failed"), NULL,
+            CFNotificationSuspensionBehaviorDeliverImmediately);
         %init(RWBSpringBoard);
     }
     else if ([bundleIdentifier isEqualToString:@"com.apple.chronod"] || gIsWidgetRenderer) {
@@ -780,12 +790,12 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
         } else {
             %init(RWB_15);
         }
-        if (gIsWidgetRenderer) {
+        if (gIsWidgetRenderer || [bundleIdentifier isEqualToString:@"com.apple.chronod"]) {
             CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
                 RWBRendererDiagnosticDarwinBegin,
                 CFSTR("com.82flex.removewidgetbg/diagnostic-begin"), NULL,
                 CFNotificationSuspensionBehaviorDeliverImmediately);
-            RWBRendererDiagnosticDarwinBegin(NULL, NULL, NULL, NULL, NULL);
+            RWBRendererDiagnosticMaybeBegin(kDiagnosticUntil);
         }
     }
 }

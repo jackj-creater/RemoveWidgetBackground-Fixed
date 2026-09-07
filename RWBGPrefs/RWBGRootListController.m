@@ -208,7 +208,7 @@ void RWBGBatchKillAll(NSArray<NSString *> *processNames, BOOL softly) {
         }
     }
     [combined appendFormat:@"\n\nRenderer reports found: %lu\n", (unsigned long)rendererCount];
-    NSString *exportPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"RemoveWidgetBackground-diagnostic2.txt"];
+    NSString *exportPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"RemoveWidgetBackground-diagnostic3.txt"];
     if (![combined writeToFile:exportPath atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"导出失败"
             message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];

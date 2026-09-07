@@ -2,7 +2,15 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Diagnostic build: 2.1.3~diagnostic2
+## Diagnostic build: 2.1.3~diagnostic3
+
+Diagnostic2 exported `Renderer reports found: 0` on the affected device. The
+capture was incorrectly limited to processes whose bundle identifier begins with
+the WidgetRenderer prefix even though this tweak's iOS 17 render hooks are also
+installed in `chronod`. Diagnostic3 starts the same bounded drawing capture in
+both process types. It attempts an actual report write instead of relying on a
+directory permission preflight, and SpringBoard records whether a drawing process
+started successfully or could not write its report.
 
 The affected iOS 17.1.1 device showed no visible improvement with test2. During
 both SpringBoard captures, the user saw the widget's normal background return for
@@ -11,7 +19,7 @@ clear, effect views stayed hidden, and every recorded persisted-snapshot update
 was suppressed. This rules out test2 as an effective visual fix and shifts the
 next measurement to the widget renderer.
 
-Diagnostic2 keeps test2 rendering behavior. During the explicitly started,
+Diagnostic3 keeps test2 rendering behavior. During the explicitly started,
 bounded capture it also records, inside each active WidgetRenderer process:
 
 - whether the scene and cached window state identify the widget as selected;

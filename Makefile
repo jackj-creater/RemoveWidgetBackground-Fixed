@@ -1,4 +1,4 @@
-export PACKAGE_VERSION := 2.1.3~diagnostic2
+export PACKAGE_VERSION := 2.1.3~diagnostic3
 export GO_EASY_ON_ME := 1
 
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)
