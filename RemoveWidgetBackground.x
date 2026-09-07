@@ -714,21 +714,35 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
         return;
     }
 
-    NSUInteger largeRectCount = [threadDictionary[@"rwb_largeRectCount"] unsignedIntegerValue];
     RBDisplayList *stableList = self.rwb_lastStableDisplayList;
     BOOL hasStableList = stableList != nil;
+    %orig;
+
+    // RenderBox expands the encoded list inside the original implementation;
+    // RBShape setters (and therefore the rectangle count) have not run when
+    // this hook is entered. Decide only after the first pass returns.
+    NSUInteger largeRectCount = [threadDictionary[@"rwb_largeRectCount"] unsignedIntegerValue];
     if (diagnosticFrame) {
         diagnosticFrame[@"displayListCountIsTwo"] = @(largeRectCount == 2);
         diagnosticFrame[@"stableListAvailable"] = @(hasStableList);
     }
 
     if (RWBShouldUseStableDisplayList(largeRectCount, hasStableList)) {
-        if (diagnosticFrame) diagnosticFrame[@"substitutedDisplayList"] = @YES;
-        %orig(stableList);
+        // Replaying the normal list also expands RBShape objects. Give that
+        // pass an isolated normal removal state and exclude it from the frame's
+        // diagnostics; afterward the observed two-rectangle state is restored.
+        NSDictionary *saved = RWBPushDrawingState(threadDictionary, YES);
+        threadDictionary[@"rwb_isReplayingStableDisplayList"] = @YES;
+        @try {
+            %orig(stableList);
+            if (diagnosticFrame) diagnosticFrame[@"substitutedDisplayList"] = @YES;
+        } @finally {
+            [threadDictionary removeObjectForKey:@"rwb_isReplayingStableDisplayList"];
+            RWBPopDrawingState(threadDictionary, saved);
+        }
         return;
     }
 
-    %orig;
     if (RWBShouldCacheDisplayList(largeRectCount, list != nil)) {
         self.rwb_lastStableDisplayList = list;
     }

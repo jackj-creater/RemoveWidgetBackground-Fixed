@@ -86,7 +86,7 @@ static void RWBRendererDiagnosticBegin(NSTimeInterval deadline) {
         RWBRendererDiagnosticLastSignature = nil;
         RWBRendererDiagnosticLastSignatureTime = 0;
         RWBRendererDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~test8 diagnostic6 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
+            @"RemoveWidgetBackground 2.1.3~test9 diagnostic7 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
              "Records drawing dimensions/decisions only; no text, images, pixels, or display-list contents.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString,
             NSBundle.mainBundle.bundleIdentifier ?: @"unknown", getpid()];
@@ -163,6 +163,7 @@ static NSMutableDictionary *RWBRendererDiagnosticPushFrame(RBLayer *layer, UIVie
 
 static void RWBRendererDiagnosticRecordRect(CGRect rect, BOOL isLarge, BOOL suppressed) {
     if (!RWBRendererDiagnosticActive || !isLarge) return;
+    if ([NSThread.currentThread.threadDictionary[@"rwb_isReplayingStableDisplayList"] boolValue]) return;
     NSMutableDictionary *frame = NSThread.currentThread.threadDictionary[RWBRendererDiagnosticFrameKey];
     if (!frame) return;
     NSUInteger count = [frame[@"largeCount"] unsignedIntegerValue];

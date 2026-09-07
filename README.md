@@ -2,7 +2,18 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Candidate build: 2.1.3~test8
+## Candidate build: 2.1.3~test9
+
+Diagnostic6 proved that `drawInDisplayList:` is called, but its entry occurs
+before RenderBox expands the list into RBShape objects: all 116 captured
+two-rectangle frames reported `listHook=1` while `listCount2=0`, `stable=0`, and
+`substituted=0`. Test9 moves both caching and transition detection after the
+original list pass. A normal list is retained after its four-or-more rectangles
+are observed. After a two-rectangle pass, the retained normal list is replayed
+before the enclosing display call completes, using isolated removal counters so
+the replay cannot corrupt transition detection. Device validation is required.
+
+## Previous candidate: 2.1.3~test8
 
 Diagnostic5 showed `contents=0 restored=0` on every normal and transitional
 RBLayer frame. RenderBox does not expose its drawable through CALayer.contents,

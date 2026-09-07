@@ -166,7 +166,7 @@ static void RWBDiagnosticBegin(CFNotificationCenterRef center, void *observer, C
         RWBDiagnosticGeneration++;
         RWBDiagnosticStarted = NSProcessInfo.processInfo.systemUptime;
         RWBDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~test8 diagnostic6 SpringBoard\n%@\nOS %@\nRecording; export after 30 seconds.\n",
+            @"RemoveWidgetBackground 2.1.3~test9 diagnostic7 SpringBoard\n%@\nOS %@\nRecording; export after 30 seconds.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString];
         RWBDiagnosticLastStates = [NSMutableDictionary dictionary];
         RWBDiagnosticActive = YES;
