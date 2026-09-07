@@ -27,12 +27,14 @@ static BOOL RWBShouldSuppressIOS17LargeRect(NSMutableDictionary *threadDictionar
     return suppress;
 }
 
-// The two-full-size-rectangle display list is the transient refresh phase seen
-// on iOS 17. Retain the previous backing contents during that phase when Core
-// Animation has exposed an object that can be restored synchronously.
-static BOOL RWBShouldRestorePreviousContents(NSUInteger largeRectCount,
-                                             BOOL hasPreviousContents) {
-    return largeRectCount == 2 && hasPreviousContents;
+static BOOL RWBShouldUseStableDisplayList(NSUInteger largeRectCount,
+                                          BOOL hasStableDisplayList) {
+    return largeRectCount == 2 && hasStableDisplayList;
+}
+
+static BOOL RWBShouldCacheDisplayList(NSUInteger largeRectCount,
+                                      BOOL hasDisplayList) {
+    return largeRectCount >= 4 && hasDisplayList;
 }
 
 static NSDictionary *RWBPushDrawingState(NSMutableDictionary *threadDictionary, BOOL enabled) {

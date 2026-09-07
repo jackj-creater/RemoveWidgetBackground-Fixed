@@ -86,7 +86,7 @@ static void RWBRendererDiagnosticBegin(NSTimeInterval deadline) {
         RWBRendererDiagnosticLastSignature = nil;
         RWBRendererDiagnosticLastSignatureTime = 0;
         RWBRendererDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~test7 diagnostic5 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
+            @"RemoveWidgetBackground 2.1.3~test8 diagnostic6 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
              "Records drawing dimensions/decisions only; no text, images, pixels, or display-list contents.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString,
             NSBundle.mainBundle.bundleIdentifier ?: @"unknown", getpid()];
@@ -146,6 +146,8 @@ static NSMutableDictionary *RWBRendererDiagnosticPushFrame(RBLayer *layer, UIVie
         @"effectiveTarget": @(effectiveTarget), @"opaqueBefore": @(layer.opaque),
         @"contentsBefore": @(layer.contents != nil || ((CALayer *)layer.presentationLayer).contents != nil),
         @"restoredContents": @NO,
+        @"displayListHook": @NO, @"displayListCountIsTwo": @NO,
+        @"stableListAvailable": @NO, @"substitutedDisplayList": @NO,
         @"large": [NSMutableArray array], @"largeCount": @0,
         @"keptMask": @0, @"sizeHash": @2166136261U
     } mutableCopy];
@@ -198,13 +200,19 @@ static void RWBRendererDiagnosticPopFrame(NSMutableDictionary *frame, RBLayer *l
     compact |= (uint64_t)([frame[@"sizeHash"] unsignedIntValue] & 0xFFFF) << 9;
     compact |= (uint64_t)([frame[@"contentsBefore"] boolValue] ? 1 : 0) << 8;
     compact |= (uint64_t)([frame[@"restoredContents"] boolValue] ? 1 : 0) << 7;
+    compact |= (uint64_t)([frame[@"displayListHook"] boolValue] ? 1 : 0) << 6;
+    compact |= (uint64_t)([frame[@"stableListAvailable"] boolValue] ? 1 : 0) << 5;
+    compact |= (uint64_t)([frame[@"substitutedDisplayList"] boolValue] ? 1 : 0) << 4;
+    compact |= (uint64_t)([frame[@"displayListCountIsTwo"] boolValue] ? 1 : 0) << 3;
     RWBRendererDiagnosticPublishState(compact);
     NSString *signature = [NSString stringWithFormat:
-        @"layer=%@ delegate=%@ scene=%@ widget=%@ sceneTarget=%d cachedTarget=%d target=%d opaque=%d->%d contents=%d restored=%d large=[%@]",
+        @"layer=%@ delegate=%@ scene=%@ widget=%@ sceneTarget=%d cachedTarget=%d target=%d opaque=%d->%d contents=%d restored=%d listHook=%d listCount2=%d stable=%d substituted=%d large=[%@]",
         frame[@"layer"], frame[@"delegate"], frame[@"scene"], frame[@"widget"],
         [frame[@"sceneTarget"] boolValue], [frame[@"cachedTarget"] boolValue],
         [frame[@"effectiveTarget"] boolValue], [frame[@"opaqueBefore"] boolValue], layer.opaque,
         [frame[@"contentsBefore"] boolValue], [frame[@"restoredContents"] boolValue],
+        [frame[@"displayListHook"] boolValue], [frame[@"displayListCountIsTwo"] boolValue],
+        [frame[@"stableListAvailable"] boolValue], [frame[@"substitutedDisplayList"] boolValue],
         [large componentsJoinedByString:@"; "]];
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
     @synchronized (RWBRendererDiagnosticLock) {

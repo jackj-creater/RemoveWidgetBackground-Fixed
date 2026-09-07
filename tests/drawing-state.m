@@ -75,11 +75,15 @@ int main(void) {
         assert(RWBShouldSuppressIOS17LargeRect(rects));
         assert([rects[@"rwb_largeRectCount"] unsignedIntegerValue] == 2);
 
-        // Only a transient two-rectangle frame with real prior contents is
-        // eligible for synchronous backing-content restoration.
-        assert(RWBShouldRestorePreviousContents(2, YES));
-        assert(!RWBShouldRestorePreviousContents(2, NO));
-        assert(!RWBShouldRestorePreviousContents(4, YES));
+        // A normal list is cached, then substituted only for the measured
+        // transient two-rectangle form.
+        assert(RWBShouldCacheDisplayList(4, YES));
+        assert(RWBShouldCacheDisplayList(5, YES));
+        assert(!RWBShouldCacheDisplayList(2, YES));
+        assert(!RWBShouldCacheDisplayList(4, NO));
+        assert(RWBShouldUseStableDisplayList(2, YES));
+        assert(!RWBShouldUseStableDisplayList(2, NO));
+        assert(!RWBShouldUseStableDisplayList(4, YES));
         puts("Drawing state tests passed: nested targets, non-targets, exceptions, consecutive frames.");
     }
     return 0;

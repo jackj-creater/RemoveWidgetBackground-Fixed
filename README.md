@@ -2,7 +2,20 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Candidate build: 2.1.3~test7
+## Candidate build: 2.1.3~test8
+
+Diagnostic5 showed `contents=0 restored=0` on every normal and transitional
+RBLayer frame. RenderBox does not expose its drawable through CALayer.contents,
+so test7 had nothing to restore. Test8 moves the handoff to RBLayer's
+`drawInDisplayList:` submission point. Each layer retains its last normal
+(four-or-more large rectangles) transparent display list. When the
+measured two-rectangle refresh list reaches submission, the cached stable list
+is submitted instead. This happens synchronously before presentation and keeps
+the cache bounded to one list per active RBLayer. Diagnostic6 records whether
+the submission hook ran, a stable list existed, and substitution occurred; it
+does not export display-list contents. Device validation is still required.
+
+## Previous candidate: 2.1.3~test7
 
 The test6 log proves that SpringBoard received every two-rectangle begin/end
 event, but the user still saw a blank widget. UIKit's snapshot view therefore did

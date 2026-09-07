@@ -122,12 +122,16 @@ static void ReloadPrefs() {
 @property (nonatomic, strong) NSNumber *rwb_shouldHideBackground;
 @end
 
+@class RBDisplayList;
+
 @interface RBLayer : CALayer
 @property (nonatomic, strong) NSNumber *rwb_previousLargeRectCount;
+@property (nonatomic, strong) RBDisplayList *rwb_lastStableDisplayList;
+- (void)drawInDisplayList:(RBDisplayList *)list;
 @end
 
 @interface RBDisplayList : NSObject
-- (id)xmlDescription;
+@property (readonly, copy, nonatomic) NSString *xmlDescription;
 @end
 
 @interface SBHWidgetViewController : UIViewController
@@ -634,6 +638,7 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 %hook RBLayer
 
 %property (nonatomic, strong) NSNumber *rwb_previousLargeRectCount;
+%property (nonatomic, strong) RBDisplayList *rwb_lastStableDisplayList;
 
 - (void)display {
     UIView *view = (UIView *)self.delegate;
@@ -642,15 +647,7 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     BOOL sceneTarget = RWBShouldHideBackgroundForScene(window.windowScene);
     BOOL cachedTarget = window.rwb_shouldHideBackground.boolValue;
     BOOL shouldHide = [view isKindOfClass:[UIView class]] && RWBRefreshWindowTarget(window);
-    // Keep a strong reference to the already-presented backing contents. A
-    // display call completes before Core Animation commits its transaction, so
-    // restoring this object in the same call prevents the transient two-rect
-    // display list from ever replacing the last stable widget frame onscreen.
-    id previousContents = shouldHide ? self.contents : nil;
-    if (shouldHide && !previousContents) {
-        CALayer *presentationLayer = (CALayer *)self.presentationLayer;
-        previousContents = presentationLayer.contents;
-    }
+    if (!shouldHide) self.rwb_lastStableDisplayList = nil;
     NSMutableDictionary *diagnosticFrame = RWBRendererDiagnosticPushFrame(
         self, [view isKindOfClass:UIView.class] ? view : nil, window,
         sceneTarget, cachedTarget, shouldHide);
@@ -677,15 +674,6 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
             if (shouldHide) {
                 if (@available(iOS 17, *)) {
                     NSNumber *largeRectCount = threadDictionary[@"rwb_largeRectCount"];
-                    BOOL restored = RWBShouldRestorePreviousContents(
-                        largeRectCount.unsignedIntegerValue, previousContents != nil);
-                    if (restored) {
-                        [CATransaction begin];
-                        [CATransaction setDisableActions:YES];
-                        self.contents = previousContents;
-                        [CATransaction commit];
-                    }
-                    if (diagnosticFrame) diagnosticFrame[@"restoredContents"] = @(restored);
                     self.rwb_previousLargeRectCount = largeRectCount;
                 }
             }
@@ -700,6 +688,49 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
         %orig;
     } @finally {
         RWBRendererDiagnosticPopFrame(diagnosticFrame, self);
+    }
+}
+
+// RBLayer does not expose its rendered surface through CALayer.contents. It
+// does, however, funnel the populated RenderBox display list through this
+// method before submission. Replace only the measured two-rectangle refresh
+// list with the last normal transparent list so the transient frame is never
+// presented. Retaining one list per layer keeps the cache bounded.
+- (void)drawInDisplayList:(RBDisplayList *)list {
+    NSMutableDictionary *threadDictionary = NSThread.currentThread.threadDictionary;
+    BOOL target = [threadDictionary[@"rwb_shouldHideBackground"] boolValue];
+    NSMutableDictionary *diagnosticFrame = threadDictionary[@"rwb_rendererDiagnosticFrame"];
+    if (diagnosticFrame) diagnosticFrame[@"displayListHook"] = @YES;
+
+    if (!target) {
+        %orig;
+        return;
+    }
+
+    if (@available(iOS 17, *)) {
+        // Continue with iOS 17 display-list selection below.
+    } else {
+        %orig;
+        return;
+    }
+
+    NSUInteger largeRectCount = [threadDictionary[@"rwb_largeRectCount"] unsignedIntegerValue];
+    RBDisplayList *stableList = self.rwb_lastStableDisplayList;
+    BOOL hasStableList = stableList != nil;
+    if (diagnosticFrame) {
+        diagnosticFrame[@"displayListCountIsTwo"] = @(largeRectCount == 2);
+        diagnosticFrame[@"stableListAvailable"] = @(hasStableList);
+    }
+
+    if (RWBShouldUseStableDisplayList(largeRectCount, hasStableList)) {
+        if (diagnosticFrame) diagnosticFrame[@"substitutedDisplayList"] = @YES;
+        %orig(stableList);
+        return;
+    }
+
+    %orig;
+    if (RWBShouldCacheDisplayList(largeRectCount, list != nil)) {
+        self.rwb_lastStableDisplayList = list;
     }
 }
 
