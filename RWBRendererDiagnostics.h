@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <math.h>
+#import <notify.h>
 #import <unistd.h>
 
 static NSString *const RWBRendererDiagnosticPrefix = @"RemoveWidgetBackground-renderer-";
@@ -15,6 +17,27 @@ static BOOL RWBRendererDiagnosticActive;
 static NSUInteger RWBRendererDiagnosticGeneration;
 static const NSUInteger RWBRendererDiagnosticLimit = 256 * 1024;
 static NSString *const RWBRendererDiagnosticFrameKey = @"rwb_rendererDiagnosticFrame";
+static int RWBRendererDiagnosticStateToken = -1;
+static uint16_t RWBRendererDiagnosticStateSequence;
+
+static const char *RWBRendererDiagnosticStateChannel(void) {
+    NSString *bundle = NSBundle.mainBundle.bundleIdentifier ?: @"";
+    if ([bundle isEqualToString:@"com.apple.chronod"])
+        return "com.82flex.removewidgetbg/drawing-state-chronod";
+    if ([bundle isEqualToString:@"com.apple.chrono.WidgetRenderer-CarPlay"])
+        return "com.82flex.removewidgetbg/drawing-state-carplay";
+    return "com.82flex.removewidgetbg/drawing-state-renderer";
+}
+
+static void RWBRendererDiagnosticPublishState(uint64_t state) {
+    const char *channel = RWBRendererDiagnosticStateChannel();
+    if (RWBRendererDiagnosticStateToken < 0)
+        notify_register_check(channel, &RWBRendererDiagnosticStateToken);
+    if (RWBRendererDiagnosticStateToken >= 0) {
+        notify_set_state(RWBRendererDiagnosticStateToken, state);
+        notify_post(channel);
+    }
+}
 
 static BOOL RWBRendererDiagnosticWriteLocked(void) {
     if (!RWBRendererDiagnosticPath || !RWBRendererDiagnosticReport) return NO;
@@ -63,7 +86,7 @@ static void RWBRendererDiagnosticBegin(NSTimeInterval deadline) {
         RWBRendererDiagnosticLastSignature = nil;
         RWBRendererDiagnosticLastSignatureTime = 0;
         RWBRendererDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~diagnostic3 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
+            @"RemoveWidgetBackground 2.1.3~diagnostic4 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
              "Records drawing dimensions/decisions only; no text, images, pixels, or display-list contents.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString,
             NSBundle.mainBundle.bundleIdentifier ?: @"unknown", getpid()];
@@ -77,11 +100,13 @@ static void RWBRendererDiagnosticBegin(NSTimeInterval deadline) {
                 break;
             }
         }
-        RWBRendererDiagnosticActive = RWBRendererDiagnosticPath != nil;
-        RWBRendererDiagnosticPostStatus(RWBRendererDiagnosticActive
+        BOOL hasWritableReport = RWBRendererDiagnosticPath != nil;
+        RWBRendererDiagnosticActive = YES;
+        RWBRendererDiagnosticStateSequence = 0;
+        RWBRendererDiagnosticPublishState(UINT64_C(1) << 63);
+        RWBRendererDiagnosticPostStatus(hasWritableReport
             ? CFSTR("com.82flex.removewidgetbg/renderer-capture-started")
             : CFSTR("com.82flex.removewidgetbg/renderer-capture-write-failed"));
-        if (!RWBRendererDiagnosticActive) return;
         NSUInteger generation = RWBRendererDiagnosticGeneration;
         NSTimeInterval delay = MAX(0.1, deadline - nowWall);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
@@ -119,7 +144,8 @@ static NSMutableDictionary *RWBRendererDiagnosticPushFrame(RBLayer *layer, UIVie
         @"scene": window.windowScene ? (NSStringFromClass(window.windowScene.class) ?: @"?") : @"nil",
         @"sceneTarget": @(sceneTarget), @"cachedTarget": @(cachedTarget),
         @"effectiveTarget": @(effectiveTarget), @"opaqueBefore": @(layer.opaque),
-        @"large": [NSMutableArray array]
+        @"large": [NSMutableArray array], @"largeCount": @0,
+        @"keptMask": @0, @"sizeHash": @2166136261U
     } mutableCopy];
     NSString *widgetID = nil;
     if ([window.windowScene respondsToSelector:@selector(widget)]) {
@@ -134,6 +160,16 @@ static NSMutableDictionary *RWBRendererDiagnosticPushFrame(RBLayer *layer, UIVie
 static void RWBRendererDiagnosticRecordRect(CGRect rect, BOOL isLarge, BOOL suppressed) {
     if (!RWBRendererDiagnosticActive || !isLarge) return;
     NSMutableDictionary *frame = NSThread.currentThread.threadDictionary[RWBRendererDiagnosticFrameKey];
+    if (!frame) return;
+    NSUInteger count = [frame[@"largeCount"] unsignedIntegerValue];
+    frame[@"largeCount"] = @(MIN(count + 1, 31));
+    if (!suppressed && count < 16)
+        frame[@"keptMask"] = @([frame[@"keptMask"] unsignedIntValue] | (1U << count));
+    uint32_t hash = [frame[@"sizeHash"] unsignedIntValue];
+    int32_t values[] = {(int32_t)lrint(rect.origin.x * 2), (int32_t)lrint(rect.origin.y * 2),
+                        (int32_t)lrint(rect.size.width * 2), (int32_t)lrint(rect.size.height * 2)};
+    for (NSUInteger i = 0; i < 4; i++) hash = (hash ^ (uint32_t)values[i]) * 16777619U;
+    frame[@"sizeHash"] = @(hash);
     NSMutableArray *large = frame[@"large"];
     if (!large || large.count >= 16) return;
     [large addObject:[NSString stringWithFormat:@"%lu:%@:%@",
@@ -148,6 +184,17 @@ static void RWBRendererDiagnosticPopFrame(NSMutableDictionary *frame, RBLayer *l
     else thread[RWBRendererDiagnosticFrameKey] = parent;
     NSArray *large = frame[@"large"];
     if (!large.count && ![frame[@"effectiveTarget"] boolValue]) return;
+    uint64_t compact = UINT64_C(1) << 63;
+    compact |= (uint64_t)([frame[@"sceneTarget"] boolValue] ? 1 : 0) << 62;
+    compact |= (uint64_t)([frame[@"cachedTarget"] boolValue] ? 1 : 0) << 61;
+    compact |= (uint64_t)([frame[@"effectiveTarget"] boolValue] ? 1 : 0) << 60;
+    compact |= (uint64_t)([frame[@"opaqueBefore"] boolValue] ? 1 : 0) << 59;
+    compact |= (uint64_t)(layer.opaque ? 1 : 0) << 58;
+    compact |= (uint64_t)(++RWBRendererDiagnosticStateSequence & 0xFFF) << 46;
+    compact |= (uint64_t)([frame[@"largeCount"] unsignedIntegerValue] & 0x1F) << 41;
+    compact |= (uint64_t)([frame[@"keptMask"] unsignedIntValue] & 0xFFFF) << 25;
+    compact |= (uint64_t)([frame[@"sizeHash"] unsignedIntValue] & 0xFFFF) << 9;
+    RWBRendererDiagnosticPublishState(compact);
     NSString *signature = [NSString stringWithFormat:
         @"layer=%@ delegate=%@ scene=%@ widget=%@ sceneTarget=%d cachedTarget=%d target=%d opaque=%d->%d large=[%@]",
         frame[@"layer"], frame[@"delegate"], frame[@"scene"], frame[@"widget"],

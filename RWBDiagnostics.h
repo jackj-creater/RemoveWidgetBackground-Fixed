@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <notify.h>
 
 // Explicitly started, bounded SpringBoard-only capture. No widget text, images,
 // remote scene contents or screenshot pixels are read or exported.
@@ -10,7 +11,15 @@ static NSMutableDictionary<NSValue *, NSString *> *RWBDiagnosticLastStates;
 static NSTimeInterval RWBDiagnosticStarted;
 static NSUInteger RWBDiagnosticGeneration;
 static BOOL RWBDiagnosticActive;
-static const NSUInteger RWBDiagnosticLimit = 192 * 1024;
+static const NSUInteger RWBDiagnosticLimit = 512 * 1024;
+static int RWBDiagnosticDrawingTokens[3] = {-1, -1, -1};
+static uint64_t RWBDiagnosticDrawingLastStates[3];
+static const char *RWBDiagnosticDrawingChannels[3] = {
+    "com.82flex.removewidgetbg/drawing-state-chronod",
+    "com.82flex.removewidgetbg/drawing-state-renderer",
+    "com.82flex.removewidgetbg/drawing-state-carplay"
+};
+static NSString *RWBDiagnosticDrawingNames[3] = {@"chronod", @"renderer", @"carplay"};
 
 static void RWBDiagnosticAppend(NSString *line) {
     if (!RWBDiagnosticActive || RWBDiagnosticReport.length >= RWBDiagnosticLimit) return;
@@ -74,9 +83,34 @@ static void RWBDiagnosticDrawingStatus(CFNotificationCenterRef center, void *obs
                                        CFDictionaryRef userInfo) {
     if (!RWBDiagnosticActive) return;
     NSString *event = [(__bridge NSString *)name hasSuffix:@"write-failed"]
-        ? @"drawing process received capture request but could not write report"
+        ? @"drawing process could not write file; compact state channel remains active"
         : @"drawing process capture started";
     dispatch_async(dispatch_get_main_queue(), ^{ RWBDiagnosticAppend(event); });
+}
+
+static void RWBDiagnosticPollDrawingStates(NSUInteger generation) {
+    if (!RWBDiagnosticActive || generation != RWBDiagnosticGeneration) return;
+    for (NSUInteger i = 0; i < 3; i++) {
+        uint64_t state = 0;
+        if (RWBDiagnosticDrawingTokens[i] >= 0 &&
+            notify_get_state(RWBDiagnosticDrawingTokens[i], &state) == NOTIFY_STATUS_OK &&
+            state && state != RWBDiagnosticDrawingLastStates[i]) {
+            RWBDiagnosticDrawingLastStates[i] = state;
+            RWBDiagnosticAppend([NSString stringWithFormat:
+                @"drawing-state process=%@ active=%d seq=%lu sceneTarget=%d cachedTarget=%d target=%d "
+                 "opaque=%d->%d large=%lu keptMask=0x%04lx sizeHash=0x%04lx",
+                RWBDiagnosticDrawingNames[i], (int)((state >> 63) & 1),
+                (unsigned long)((state >> 46) & 0xFFF), (int)((state >> 62) & 1),
+                (int)((state >> 61) & 1), (int)((state >> 60) & 1),
+                (int)((state >> 59) & 1), (int)((state >> 58) & 1),
+                (unsigned long)((state >> 41) & 0x1F),
+                (unsigned long)((state >> 25) & 0xFFFF),
+                (unsigned long)((state >> 9) & 0xFFFF)]);
+        }
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 40), dispatch_get_main_queue(), ^{
+        RWBDiagnosticPollDrawingStates(generation);
+    });
 }
 
 static void RWBDiagnosticSample(NSUInteger generation, NSUInteger tick) {
@@ -128,10 +162,17 @@ static void RWBDiagnosticBegin(CFNotificationCenterRef center, void *observer, C
         RWBDiagnosticGeneration++;
         RWBDiagnosticStarted = NSProcessInfo.processInfo.systemUptime;
         RWBDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~diagnostic3 SpringBoard\n%@\nOS %@\nRecording; export after 30 seconds.\n",
+            @"RemoveWidgetBackground 2.1.3~diagnostic4 SpringBoard\n%@\nOS %@\nRecording; export after 30 seconds.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString];
         RWBDiagnosticLastStates = [NSMutableDictionary dictionary];
         RWBDiagnosticActive = YES;
+        for (NSUInteger i = 0; i < 3; i++) {
+            if (RWBDiagnosticDrawingTokens[i] < 0)
+                notify_register_check(RWBDiagnosticDrawingChannels[i], &RWBDiagnosticDrawingTokens[i]);
+            if (RWBDiagnosticDrawingTokens[i] >= 0)
+                notify_set_state(RWBDiagnosticDrawingTokens[i], 0);
+            RWBDiagnosticDrawingLastStates[i] = 0;
+        }
         for (NSString *className in @[@"CHUISWidgetHostViewController", @"SBHWidgetContainerView"]) {
             Class cls = NSClassFromString(className);
             for (NSString *selector in @[@"_setBackgroundViewMode:", @"_expectedBackgroundViewMode",
@@ -144,6 +185,7 @@ static void RWBDiagnosticBegin(CFNotificationCenterRef center, void *observer, C
         // The status file lets Settings distinguish a missing SpringBoard hook
         // from a successfully started capture; the full report is written once.
         if (!RWBDiagnosticWrite()) { RWBDiagnosticActive = NO; return; }
+        RWBDiagnosticPollDrawingStates(RWBDiagnosticGeneration);
         RWBDiagnosticSample(RWBDiagnosticGeneration, 0);
     });
 }

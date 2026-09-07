@@ -2,7 +2,15 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Diagnostic build: 2.1.3~diagnostic3
+## Diagnostic build: 2.1.3~diagnostic4
+
+Diagnostic3 confirmed that two drawing processes received the capture request,
+but both were sandboxed from writing a shared report file. Diagnostic4 adds a
+compact Darwin notification-state channel from each drawing process to
+SpringBoard. SpringBoard polls it every 25 ms and records target recognition,
+large-rectangle count, kept-position mask, size-order hash, and layer opacity.
+This transport does not require drawing processes to write files and carries no
+widget content.
 
 Diagnostic2 exported `Renderer reports found: 0` on the affected device. The
 capture was incorrectly limited to processes whose bundle identifier begins with
