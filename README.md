@@ -2,7 +2,20 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Candidate build: 2.1.3~test12
+## Candidate build: 2.1.3~test13
+
+Test12 passed device validation: widgets no longer disappeared, and page
+transitions remained transparent. Test13 retains the same pre-submission
+two-rectangle rejection but removes its main performance cost. For a normal
+frame, the fresh transparent display list created by preflight is nested
+directly into RenderBox's system-configured destination list instead of calling
+the widget drawing delegate a second time. Thus both normal and rejected frames
+execute the widget callback only once. RenderBox still owns the final crop,
+scale, rotation, and GPU submission. Diagnostic11 reports whether the preflight
+list was reused or the transient submission was skipped. Device validation is
+required.
+
+## Previous candidate: 2.1.3~test12
 
 Diagnostic9 confirmed that enabling SpringBoard's persisted snapshot caused the
 new page-transition regression: its UIImageView changed from hidden to visible

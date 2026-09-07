@@ -131,7 +131,9 @@ typedef void (^RWBDisplayListCallback)(RBDisplayList *list);
 @end
 
 @interface RBDisplayList : NSObject
+@property (nonatomic) double deviceScale;
 - (void)setContentRect:(CGRect)rect;
+- (void)drawDisplayList:(RBDisplayList *)list;
 @end
 
 @interface SBHWidgetViewController : UIViewController
@@ -709,8 +711,9 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     if (!probeList) return %orig(bounds, callback);
 
     CGFloat scale = self.contentsScale > 0 ? self.contentsScale : 1;
-    [probeList setContentRect:CGRectMake(0, 0, bounds.size.width * scale,
-                                         bounds.size.height * scale)];
+    probeList.deviceScale = scale;
+    [probeList setContentRect:CGRectMake(0, 0, ceil(bounds.size.width * scale),
+                                         ceil(bounds.size.height * scale))];
     NSDictionary *saved = RWBPushDrawingState(threadDictionary, YES);
     NSUInteger probeLargeRectCount = 0;
     threadDictionary[@"rwb_isProbingDisplayList"] = @YES;
@@ -733,7 +736,15 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
         return NO;
     }
 
-    return %orig(bounds, callback);
+    // The preflight list has not been rendered or consumed. Nest that fresh
+    // list in RenderBox's correctly transformed destination instead of asking
+    // the widget delegate to build the same commands a second time.
+    threadDictionary[@"rwb_largeRectCount"] = @(probeLargeRectCount);
+    if (diagnosticFrame) diagnosticFrame[@"stableListAvailable"] = @YES;
+    RWBDisplayListCallback commitProbe = ^(RBDisplayList *destinationList) {
+        [destinationList drawDisplayList:probeList];
+    };
+    return %orig(bounds, commitProbe);
 }
 
 %end
