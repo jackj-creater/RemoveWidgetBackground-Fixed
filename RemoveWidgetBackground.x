@@ -123,6 +123,7 @@ static void ReloadPrefs() {
 @end
 
 @interface RBLayer : CALayer
+@property (nonatomic, strong) NSNumber *rwb_previousLargeRectCount;
 @end
 
 @interface RBDisplayList : NSObject
@@ -630,6 +631,8 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 
 %hook RBLayer
 
+%property (nonatomic, strong) NSNumber *rwb_previousLargeRectCount;
+
 - (void)display {
     UIView *view = (UIView *)self.delegate;
     UIWindow *window = [view isKindOfClass:[UIView class]] ? view.window : nil;
@@ -645,6 +648,13 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     // its shapes inherit the parent's removal flag and advance its counter.
     if (shouldHide || threadDictionary[@"rwb_shouldHideBackground"]) {
         NSDictionary *saved = RWBPushDrawingState(threadDictionary, shouldHide);
+        if (shouldHide) {
+            if (@available(iOS 17, *)) {
+                threadDictionary[@"rwb_largeRectCount"] = @0;
+                threadDictionary[@"rwb_dropFirstLargeRect"] =
+                    @(self.rwb_previousLargeRectCount.unsignedIntegerValue == 2);
+            }
+        }
         @try {
             if (@available(iOS 17, *)) {
                 if (shouldHide && self.opaque)
@@ -653,6 +663,10 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 
             %orig;
         } @finally {
+            if (shouldHide) {
+                if (@available(iOS 17, *))
+                    self.rwb_previousLargeRectCount = threadDictionary[@"rwb_largeRectCount"];
+            }
             RWBPopDrawingState(threadDictionary, saved);
             RWBRendererDiagnosticPopFrame(diagnosticFrame, self);
         }
@@ -729,14 +743,7 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     BOOL suppress = NO;
     if (threadDict[@"rwb_shouldHideBackground"]) {
         if (isLarge) {
-            NSNumber *firstN = threadDict[@"rwb_didSkipFirstN"];
-            if ([firstN intValue] > 1) {
-                suppress = YES;
-            } else {
-                int newN = firstN ? [firstN intValue] + 1 : 0;
-                threadDict[@"rwb_didSkipFirstN"] = @(newN);
-                if (newN == 1) suppress = YES;
-            }
+            suppress = RWBShouldSuppressIOS17LargeRect(threadDict);
         }
     }
     RWBRendererDiagnosticRecordRect(arg1, isLarge, suppress);

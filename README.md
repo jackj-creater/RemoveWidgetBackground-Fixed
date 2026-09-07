@@ -2,7 +2,27 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Diagnostic build: 2.1.3~diagnostic4
+## Candidate build: 2.1.3~test5
+
+Diagnostic4 captured the affected iOS 17.1.1 return transition. Target recognition
+remained enabled and the render layer remained nonopaque. About 0.65 seconds after
+the widget hosts reappeared, rendering changed from the normal four full-size
+rectangles to a repeated two-rectangle form. Both rectangles were 364 x 170. The
+upstream iOS 17 heuristic retained rectangle 1 and removed rectangle 2 on every
+such frame, matching the user's observation that widget content stayed visible
+while the original background returned.
+
+Test5 remembers the previous large-rectangle count per RBLayer. After a layer has
+produced exactly two full-size rectangles, its next repeated two-rectangle frame
+also removes rectangle 1. Rectangle 2 continues to be removed by the existing
+rule. The first transition frame remains unchanged; later repeated frames remove
+both full-size rectangles. Ordinary four-rectangle rendering retains the upstream
+keep/drop sequence. Automated tests cover both sequences. This is a device-test
+candidate, not yet a confirmed fix.
+
+The diagnostic4 capture remains available in test5.
+
+## Previous diagnostic: 2.1.3~diagnostic4
 
 Diagnostic3 confirmed that two drawing processes received the capture request,
 but both were sandboxed from writing a shared report file. Diagnostic4 adds a

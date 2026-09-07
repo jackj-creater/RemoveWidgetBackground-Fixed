@@ -55,6 +55,25 @@ int main(void) {
             RWBPopDrawingState(state, saved);
             assert([state isEqualToDictionary:original]);
         }
+
+        // Preserve the upstream iOS 17 sequence for ordinary displays.
+        NSMutableDictionary *rects = [@{@"rwb_shouldHideBackground": @YES,
+                                        @"rwb_largeRectCount": @0,
+                                        @"rwb_dropFirstLargeRect": @NO} mutableCopy];
+        assert(!RWBShouldSuppressIOS17LargeRect(rects));
+        assert(RWBShouldSuppressIOS17LargeRect(rects));
+        assert(!RWBShouldSuppressIOS17LargeRect(rects));
+        assert(RWBShouldSuppressIOS17LargeRect(rects));
+        assert([rects[@"rwb_largeRectCount"] unsignedIntegerValue] == 4);
+
+        // Once the same layer previously produced exactly two full-size rects,
+        // suppress both during its repeated refresh frames.
+        rects = [@{@"rwb_shouldHideBackground": @YES,
+                   @"rwb_largeRectCount": @0,
+                   @"rwb_dropFirstLargeRect": @YES} mutableCopy];
+        assert(RWBShouldSuppressIOS17LargeRect(rects));
+        assert(RWBShouldSuppressIOS17LargeRect(rects));
+        assert([rects[@"rwb_largeRectCount"] unsignedIntegerValue] == 2);
         puts("Drawing state tests passed: nested targets, non-targets, exceptions, consecutive frames.");
     }
     return 0;
