@@ -2,7 +2,18 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Candidate build: 2.1.3~test9
+## Candidate build: 2.1.3~test10
+
+Diagnostic7 showed that all 344 captured transient frames reached the correct
+branch (`listCount2=1 stable=1 substituted=1`) but still appeared blank. The
+retained RBDisplayList reference had already been consumed or reused by
+RenderBox. Test10 encodes a normal list before its first render, stores only the
+independent in-memory data, and decodes a fresh RBDisplayList for each transient
+replay. The data is never written to diagnostics or disk. Diagnostic8 reports
+only whether encoding, decoding, and replayed normal rectangle generation
+succeeded. Device validation is required.
+
+## Previous candidate: 2.1.3~test9
 
 Diagnostic6 proved that `drawInDisplayList:` is called, but its entry occurs
 before RenderBox expands the list into RBShape objects: all 116 captured

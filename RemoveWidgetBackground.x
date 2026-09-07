@@ -126,12 +126,14 @@ static void ReloadPrefs() {
 
 @interface RBLayer : CALayer
 @property (nonatomic, strong) NSNumber *rwb_previousLargeRectCount;
-@property (nonatomic, strong) RBDisplayList *rwb_lastStableDisplayList;
+@property (nonatomic, strong) NSData *rwb_lastStableDisplayListData;
 - (void)drawInDisplayList:(RBDisplayList *)list;
 @end
 
 @interface RBDisplayList : NSObject
 @property (readonly, copy, nonatomic) NSString *xmlDescription;
+- (NSData *)encodedDataForDelegate:(id)delegate error:(NSError **)error;
++ (instancetype)decodedObjectWithData:(NSData *)data delegate:(id)delegate error:(NSError **)error;
 @end
 
 @interface SBHWidgetViewController : UIViewController
@@ -638,7 +640,7 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 %hook RBLayer
 
 %property (nonatomic, strong) NSNumber *rwb_previousLargeRectCount;
-%property (nonatomic, strong) RBDisplayList *rwb_lastStableDisplayList;
+%property (nonatomic, strong) NSData *rwb_lastStableDisplayListData;
 
 - (void)display {
     UIView *view = (UIView *)self.delegate;
@@ -647,7 +649,7 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     BOOL sceneTarget = RWBShouldHideBackgroundForScene(window.windowScene);
     BOOL cachedTarget = window.rwb_shouldHideBackground.boolValue;
     BOOL shouldHide = [view isKindOfClass:[UIView class]] && RWBRefreshWindowTarget(window);
-    if (!shouldHide) self.rwb_lastStableDisplayList = nil;
+    if (!shouldHide) self.rwb_lastStableDisplayListData = nil;
     NSMutableDictionary *diagnosticFrame = RWBRendererDiagnosticPushFrame(
         self, [view isKindOfClass:UIView.class] ? view : nil, window,
         sceneTarget, cachedTarget, shouldHide);
@@ -714,8 +716,16 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
         return;
     }
 
-    RBDisplayList *stableList = self.rwb_lastStableDisplayList;
-    BOOL hasStableList = stableList != nil;
+    // Encode before RenderBox consumes the current list. Repeated transient
+    // frames do not need candidate copies; the stable normal data is already
+    // retained and the previous display count lets us avoid that extra work.
+    NSData *candidateData = nil;
+    if (self.rwb_previousLargeRectCount.unsignedIntegerValue != 2) {
+        candidateData = [list encodedDataForDelegate:nil error:nil];
+    }
+    NSData *stableData = self.rwb_lastStableDisplayListData;
+    BOOL hasStableList = stableData.length > 0;
+    if (diagnosticFrame) diagnosticFrame[@"encodedDisplayList"] = @(candidateData.length > 0);
     %orig;
 
     // RenderBox expands the encoded list inside the original implementation;
@@ -728,6 +738,10 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     }
 
     if (RWBShouldUseStableDisplayList(largeRectCount, hasStableList)) {
+        RBDisplayList *stableList = [RBDisplayList decodedObjectWithData:stableData
+                                                                delegate:nil error:nil];
+        if (diagnosticFrame) diagnosticFrame[@"decodedDisplayList"] = @(stableList != nil);
+        if (!stableList) return;
         // Replaying the normal list also expands RBShape objects. Give that
         // pass an isolated normal removal state and exclude it from the frame's
         // diagnostics; afterward the observed two-rectangle state is restored.
@@ -735,7 +749,11 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
         threadDictionary[@"rwb_isReplayingStableDisplayList"] = @YES;
         @try {
             %orig(stableList);
-            if (diagnosticFrame) diagnosticFrame[@"substitutedDisplayList"] = @YES;
+            if (diagnosticFrame) {
+                diagnosticFrame[@"substitutedDisplayList"] = @YES;
+                diagnosticFrame[@"replayProducedNormalRects"] =
+                    @([threadDictionary[@"rwb_largeRectCount"] unsignedIntegerValue] >= 4);
+            }
         } @finally {
             [threadDictionary removeObjectForKey:@"rwb_isReplayingStableDisplayList"];
             RWBPopDrawingState(threadDictionary, saved);
@@ -743,8 +761,8 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
         return;
     }
 
-    if (RWBShouldCacheDisplayList(largeRectCount, list != nil)) {
-        self.rwb_lastStableDisplayList = list;
+    if (RWBShouldCacheDisplayList(largeRectCount, candidateData.length > 0)) {
+        self.rwb_lastStableDisplayListData = candidateData;
     }
 }
 

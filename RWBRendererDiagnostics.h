@@ -86,7 +86,7 @@ static void RWBRendererDiagnosticBegin(NSTimeInterval deadline) {
         RWBRendererDiagnosticLastSignature = nil;
         RWBRendererDiagnosticLastSignatureTime = 0;
         RWBRendererDiagnosticReport = [NSMutableString stringWithFormat:
-            @"RemoveWidgetBackground 2.1.3~test9 diagnostic7 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
+            @"RemoveWidgetBackground 2.1.3~test10 diagnostic8 drawing process\n%@\nOS %@\nbundle=%@ pid=%d\n"
              "Records drawing dimensions/decisions only; no text, images, pixels, or display-list contents.\n",
             NSDate.date, NSProcessInfo.processInfo.operatingSystemVersionString,
             NSBundle.mainBundle.bundleIdentifier ?: @"unknown", getpid()];
@@ -148,6 +148,8 @@ static NSMutableDictionary *RWBRendererDiagnosticPushFrame(RBLayer *layer, UIVie
         @"restoredContents": @NO,
         @"displayListHook": @NO, @"displayListCountIsTwo": @NO,
         @"stableListAvailable": @NO, @"substitutedDisplayList": @NO,
+        @"encodedDisplayList": @NO, @"decodedDisplayList": @NO,
+        @"replayProducedNormalRects": @NO,
         @"large": [NSMutableArray array], @"largeCount": @0,
         @"keptMask": @0, @"sizeHash": @2166136261U
     } mutableCopy];
@@ -205,15 +207,20 @@ static void RWBRendererDiagnosticPopFrame(NSMutableDictionary *frame, RBLayer *l
     compact |= (uint64_t)([frame[@"stableListAvailable"] boolValue] ? 1 : 0) << 5;
     compact |= (uint64_t)([frame[@"substitutedDisplayList"] boolValue] ? 1 : 0) << 4;
     compact |= (uint64_t)([frame[@"displayListCountIsTwo"] boolValue] ? 1 : 0) << 3;
+    compact |= (uint64_t)([frame[@"encodedDisplayList"] boolValue] ? 1 : 0) << 2;
+    compact |= (uint64_t)([frame[@"decodedDisplayList"] boolValue] ? 1 : 0) << 1;
+    compact |= (uint64_t)([frame[@"replayProducedNormalRects"] boolValue] ? 1 : 0);
     RWBRendererDiagnosticPublishState(compact);
     NSString *signature = [NSString stringWithFormat:
-        @"layer=%@ delegate=%@ scene=%@ widget=%@ sceneTarget=%d cachedTarget=%d target=%d opaque=%d->%d contents=%d restored=%d listHook=%d listCount2=%d stable=%d substituted=%d large=[%@]",
+        @"layer=%@ delegate=%@ scene=%@ widget=%@ sceneTarget=%d cachedTarget=%d target=%d opaque=%d->%d contents=%d restored=%d listHook=%d listCount2=%d stable=%d substituted=%d encoded=%d decoded=%d replayRects=%d large=[%@]",
         frame[@"layer"], frame[@"delegate"], frame[@"scene"], frame[@"widget"],
         [frame[@"sceneTarget"] boolValue], [frame[@"cachedTarget"] boolValue],
         [frame[@"effectiveTarget"] boolValue], [frame[@"opaqueBefore"] boolValue], layer.opaque,
         [frame[@"contentsBefore"] boolValue], [frame[@"restoredContents"] boolValue],
         [frame[@"displayListHook"] boolValue], [frame[@"displayListCountIsTwo"] boolValue],
         [frame[@"stableListAvailable"] boolValue], [frame[@"substitutedDisplayList"] boolValue],
+        [frame[@"encodedDisplayList"] boolValue], [frame[@"decodedDisplayList"] boolValue],
+        [frame[@"replayProducedNormalRects"] boolValue],
         [large componentsJoinedByString:@"; "]];
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
     @synchronized (RWBRendererDiagnosticLock) {
