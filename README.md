@@ -2,7 +2,21 @@
 
 Remove the background of any app widgets on the home screen.
 
-## Candidate build: 2.1.3~test10
+## Candidate build: 2.1.3~test11
+
+Diagnostic8 showed that none of 415 measured transient frames could encode a
+standalone RBDisplayList when no private resource delegate was available
+(`encoded=0 decoded=0 replayRects=0`). Test11 removes that ineffective renderer
+copy path. On iOS 17 it instead permits SpringBoard's own persisted snapshot to
+be created and loaded while continuing to suppress the separate system
+background material. The log shows SpringBoard requests this snapshot roughly
+0.2 seconds before the two-rectangle refresh phase, making it the earliest
+stable handoff point available. The normal renderer removal logic remains
+unchanged. Diagnostic9 records snapshot-update completion and the existing host
+hierarchy so the bridge can be verified without exporting widget contents.
+Device validation is required.
+
+## Previous candidate: 2.1.3~test10
 
 Diagnostic7 showed that all 344 captured transient frames reached the correct
 branch (`listCount2=1 stable=1 substituted=1`) but still appeared blank. The

@@ -122,18 +122,8 @@ static void ReloadPrefs() {
 @property (nonatomic, strong) NSNumber *rwb_shouldHideBackground;
 @end
 
-@class RBDisplayList;
-
 @interface RBLayer : CALayer
 @property (nonatomic, strong) NSNumber *rwb_previousLargeRectCount;
-@property (nonatomic, strong) NSData *rwb_lastStableDisplayListData;
-- (void)drawInDisplayList:(RBDisplayList *)list;
-@end
-
-@interface RBDisplayList : NSObject
-@property (readonly, copy, nonatomic) NSString *xmlDescription;
-- (NSData *)encodedDataForDelegate:(id)delegate error:(NSError **)error;
-+ (instancetype)decodedObjectWithData:(NSData *)data delegate:(id)delegate error:(NSError **)error;
 @end
 
 @interface SBHWidgetViewController : UIViewController
@@ -448,30 +438,27 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 
 - (void)_updatePersistedSnapshotContent {
     RWBDiagnosticEvent(self, @"persisted snapshot update entered");
-    // Keep the live transparent scene visible. SpringBoard's persisted image
-    // is rendered independently and can still contain the system background;
-    // swapping it in produces the short opaque frame seen during refreshes.
-    if (RWBShouldSuppressHostBackground(self)) {
-        RWBEnforceHostTransparency(self);
-        RWBDiagnosticEvent(self, @"persisted snapshot update suppressed");
-        return;
-    }
-
+    // iOS 17 asks for this stable image shortly before WidgetRenderer submits
+    // its temporary two-rectangle refresh list. Let SpringBoard retain that
+    // last complete frame so it can bridge the remote surface handoff.
     %orig;
+    RWBEnforceHostTransparency(self);
+    RWBDiagnosticEvent(self, @"persisted snapshot update completed");
 }
 
 - (void)_updatePersistedSnapshotContentIfNecessary {
     RWBDiagnosticEvent(self, @"persisted snapshot conditional update entered");
-    if (RWBShouldSuppressHostBackground(self)) {
-        RWBEnforceHostTransparency(self);
-        return;
-    }
-
     %orig;
+    RWBEnforceHostTransparency(self);
+    RWBDiagnosticEvent(self, @"persisted snapshot conditional update completed");
 }
 
 /* iOS 16.0 to 16.2 */
 - (id)_snapshotImageFromURL:(id)arg1 {
+    if (@available(iOS 17, *)) {
+        return %orig;
+    }
+
     CHSWidget *widget = self.widget;
     if ([widget isKindOfClass:%c(CHSWidget)] &&
         widget.extensionBundleIdentifier &&
@@ -640,7 +627,6 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
 %hook RBLayer
 
 %property (nonatomic, strong) NSNumber *rwb_previousLargeRectCount;
-%property (nonatomic, strong) NSData *rwb_lastStableDisplayListData;
 
 - (void)display {
     UIView *view = (UIView *)self.delegate;
@@ -649,7 +635,6 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
     BOOL sceneTarget = RWBShouldHideBackgroundForScene(window.windowScene);
     BOOL cachedTarget = window.rwb_shouldHideBackground.boolValue;
     BOOL shouldHide = [view isKindOfClass:[UIView class]] && RWBRefreshWindowTarget(window);
-    if (!shouldHide) self.rwb_lastStableDisplayListData = nil;
     NSMutableDictionary *diagnosticFrame = RWBRendererDiagnosticPushFrame(
         self, [view isKindOfClass:UIView.class] ? view : nil, window,
         sceneTarget, cachedTarget, shouldHide);
@@ -690,80 +675,6 @@ static void RWBEnforceHostTransparency(CHUISWidgetHostViewController *viewContro
         %orig;
     } @finally {
         RWBRendererDiagnosticPopFrame(diagnosticFrame, self);
-    }
-}
-
-// RBLayer does not expose its rendered surface through CALayer.contents. It
-// does, however, funnel the populated RenderBox display list through this
-// method before submission. Replace only the measured two-rectangle refresh
-// list with the last normal transparent list so the transient frame is never
-// presented. Retaining one list per layer keeps the cache bounded.
-- (void)drawInDisplayList:(RBDisplayList *)list {
-    NSMutableDictionary *threadDictionary = NSThread.currentThread.threadDictionary;
-    BOOL target = [threadDictionary[@"rwb_shouldHideBackground"] boolValue];
-    NSMutableDictionary *diagnosticFrame = threadDictionary[@"rwb_rendererDiagnosticFrame"];
-    if (diagnosticFrame) diagnosticFrame[@"displayListHook"] = @YES;
-
-    if (!target) {
-        %orig;
-        return;
-    }
-
-    if (@available(iOS 17, *)) {
-        // Continue with iOS 17 display-list selection below.
-    } else {
-        %orig;
-        return;
-    }
-
-    // Encode before RenderBox consumes the current list. Repeated transient
-    // frames do not need candidate copies; the stable normal data is already
-    // retained and the previous display count lets us avoid that extra work.
-    NSData *candidateData = nil;
-    if (self.rwb_previousLargeRectCount.unsignedIntegerValue != 2) {
-        candidateData = [list encodedDataForDelegate:nil error:nil];
-    }
-    NSData *stableData = self.rwb_lastStableDisplayListData;
-    BOOL hasStableList = stableData.length > 0;
-    if (diagnosticFrame) diagnosticFrame[@"encodedDisplayList"] = @(candidateData.length > 0);
-    %orig;
-
-    // RenderBox expands the encoded list inside the original implementation;
-    // RBShape setters (and therefore the rectangle count) have not run when
-    // this hook is entered. Decide only after the first pass returns.
-    NSUInteger largeRectCount = [threadDictionary[@"rwb_largeRectCount"] unsignedIntegerValue];
-    if (diagnosticFrame) {
-        diagnosticFrame[@"displayListCountIsTwo"] = @(largeRectCount == 2);
-        diagnosticFrame[@"stableListAvailable"] = @(hasStableList);
-    }
-
-    if (RWBShouldUseStableDisplayList(largeRectCount, hasStableList)) {
-        Class displayListClass = NSClassFromString(@"RBDisplayList");
-        RBDisplayList *stableList = [displayListClass decodedObjectWithData:stableData
-                                                                    delegate:nil error:nil];
-        if (diagnosticFrame) diagnosticFrame[@"decodedDisplayList"] = @(stableList != nil);
-        if (!stableList) return;
-        // Replaying the normal list also expands RBShape objects. Give that
-        // pass an isolated normal removal state and exclude it from the frame's
-        // diagnostics; afterward the observed two-rectangle state is restored.
-        NSDictionary *saved = RWBPushDrawingState(threadDictionary, YES);
-        threadDictionary[@"rwb_isReplayingStableDisplayList"] = @YES;
-        @try {
-            %orig(stableList);
-            if (diagnosticFrame) {
-                diagnosticFrame[@"substitutedDisplayList"] = @YES;
-                diagnosticFrame[@"replayProducedNormalRects"] =
-                    @([threadDictionary[@"rwb_largeRectCount"] unsignedIntegerValue] >= 4);
-            }
-        } @finally {
-            [threadDictionary removeObjectForKey:@"rwb_isReplayingStableDisplayList"];
-            RWBPopDrawingState(threadDictionary, saved);
-        }
-        return;
-    }
-
-    if (RWBShouldCacheDisplayList(largeRectCount, candidateData.length > 0)) {
-        self.rwb_lastStableDisplayListData = candidateData;
     }
 }
 
